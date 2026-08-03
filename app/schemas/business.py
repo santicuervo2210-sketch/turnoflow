@@ -86,7 +86,7 @@ class BarberRead(BaseModel):
 class CustomerCreate(BaseModel):
     barber_shop_id: int
     full_name: str = Field(min_length=1, max_length=120)
-    phone: str = Field(min_length=1, max_length=30)
+    phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=255)
     notes: str | None = None
 

@@ -72,7 +72,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260801_0008`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260803_0009`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -129,7 +129,7 @@ TurnoFlow quedo conectado a Supabase como PostgreSQL gestionado, sin usar todavi
 - Region: `sa-east-1`.
 - Dashboard: `https://supabase.com/dashboard/project/fyyycgvjqfitvpalwvkn`.
 - Estado verificado por CLI: `ACTIVE_HEALTHY`.
-- Revision Alembic aplicada: `20260801_0008`.
+- Revision Alembic aplicada: `20260803_0009`.
 
 La variable `DATABASE_URL` local esta en `.env` y apunta a la conexion directa:
 
@@ -225,7 +225,7 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `SESSION_SECRET` tiene al menos 32 caracteres aleatorios.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
-- [ ] `python -m alembic current` muestra `20260801_0008`.
+- [ ] `python -m alembic current` muestra `20260803_0009`.
 - [ ] `python -m app.create_owner` ejecutado.
 - [ ] `python -m app.check_production` devuelve OK.
 - [ ] Datos demo o datos reales iniciales cargados.

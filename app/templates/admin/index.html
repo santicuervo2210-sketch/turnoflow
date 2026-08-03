@@ -299,19 +299,19 @@
         <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#customerModal" type="button">Nuevo cliente</button>
       </div>
       <div class="tf-card-grid">
-        {% for customer in customers[-12:] %}
+                {% for customer in customers[-12:] %}
           <article class="tf-data-card">
             <div class="tf-card-title-row">
               <div>
                 <strong>{{ customer.full_name }}</strong>
-                <span>{{ customer.phone }}</span>
+                <span>{{ customer.phone or "Sin telefono" }}</span>
               </div>
               <a class="btn btn-sm btn-outline-secondary" href="/customer/{{ customer.id }}/appointments">Ver turnos</a>
             </div>
             <form action="/admin/customers/{{ customer.id }}/edit" method="post" class="tf-edit-grid">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input class="form-control form-control-sm" name="full_name" value="{{ customer.full_name }}" required>
-              <input class="form-control form-control-sm" name="phone" value="{{ customer.phone }}" required>
+              <input class="form-control form-control-sm" name="phone" value="{{ customer.phone or '' }}" placeholder="Telefono opcional">
               <input class="form-control form-control-sm" name="email" value="{{ customer.email or '' }}" placeholder="Email">
               <input class="form-control form-control-sm" name="notes" value="{{ customer.notes or '' }}" placeholder="Notas">
               <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>
@@ -621,11 +621,22 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-body">
           <div class="row g-3">
+            {% if shops|length > 1 %}
+            <div class="col-12">
+              <label class="form-label" for="appointmentShopSelect">Negocio</label>
+              <select class="form-select" id="appointmentShopSelect" name="appointment_shop_id" required>
+                {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
+              </select>
+              <div class="form-text">Elige el negocio antes de seleccionar el profesional y el servicio.</div>
+            </div>
+            {% elif shops %}
+              <input type="hidden" id="appointmentShopSelect" value="{{ shops[0].id }}">
+            {% endif %}
             <div class="col-12">
               <label class="form-label">Cliente existente</label>
               <select class="form-select" name="customer_id">
                 <option value="">Crear cliente nuevo</option>
-                {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.full_name }} - {{ customer.phone }}</option>{% endfor %}
+                {% for customer in customers %}<option value="{{ customer.id }}" data-shop-id="{{ customer.barber_shop_id }}">{{ customer.full_name }} - {{ customer.phone }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-md-6">
@@ -634,18 +645,18 @@
             </div>
             <div class="col-md-6">
               <label class="form-label">Telefono nuevo cliente</label>
-              <input class="form-control" name="new_customer_phone" placeholder="WhatsApp o telefono">
+              <input class="form-control" name="new_customer_phone" placeholder="Telefono opcional">
             </div>
             <div class="col-md-4">
               <label class="form-label">Servicio</label>
               <select class="form-select" name="service_id" required>
-                {% for service in services %}<option value="{{ service.id }}">{{ service.name }} - ${{ service.price }}</option>{% endfor %}
+                {% for service in services %}<option value="{{ service.id }}" data-shop-id="{{ service.barber_shop_id }}">{{ service.name }} - ${{ service.price }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-md-4">
               <label class="form-label">Profesional</label>
               <select class="form-select" name="barber_id" required>
-                {% for barber in barbers %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
+                {% for barber in barbers %}<option value="{{ barber.id }}" data-shop-id="{{ barber.barber_shop_id }}">{{ barber.name }}</option>{% endfor %}
               </select>
             </div>
             <div class="col-md-4">
@@ -769,7 +780,7 @@
             </select>
           </div>
           <div class="col-12"><input class="form-control" name="full_name" placeholder="Nombre" required></div>
-          <div class="col-12"><input class="form-control" name="phone" placeholder="Telefono" required></div>
+          <div class="col-12"><input class="form-control" name="phone" placeholder="Telefono opcional"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
           <div class="col-6"><input class="form-control" name="notes" placeholder="Notas"></div>
         </div>
@@ -832,4 +843,46 @@
     </div>
   </div>
 </div>
+
+<script>
+  (() => {
+    const shopSelect = document.getElementById("appointmentShopSelect");
+    const form = document.querySelector("#appointmentModal form");
+    if (!shopSelect || !form) return;
+
+    const barberSelect = form.querySelector('[name="barber_id"]');
+    const serviceSelect = form.querySelector('[name="service_id"]');
+    const customerSelect = form.querySelector('[name="customer_id"]');
+    const newCustomerOption = customerSelect?.options[0];
+
+    const visibleOptions = (select) => Array.from(select.options).filter((option) => !option.hidden);
+
+    const keepValidSelection = (select) => {
+      if (!select) return;
+      const selected = select.options[select.selectedIndex];
+      if (selected && !selected.hidden) return;
+      const firstVisible = visibleOptions(select)[0];
+      select.value = firstVisible ? firstVisible.value : "";
+    };
+
+    const filterByShop = (select, shopId) => {
+      if (!select) return;
+      Array.from(select.options).forEach((option) => {
+        option.hidden = Boolean(option.dataset.shopId && option.dataset.shopId !== shopId);
+      });
+      keepValidSelection(select);
+    };
+
+    const syncAppointmentCatalog = () => {
+      const shopId = shopSelect.value;
+      filterByShop(barberSelect, shopId);
+      filterByShop(serviceSelect, shopId);
+      filterByShop(customerSelect, shopId);
+      if (newCustomerOption) newCustomerOption.hidden = false;
+    };
+
+    shopSelect.addEventListener("change", syncAppointmentCatalog);
+    syncAppointmentCatalog();
+  })();
+</script>
 {% endblock %}

@@ -463,6 +463,99 @@ def test_admin_can_create_appointment_with_new_customer_inline(client: TestClien
     appointment = client.get("/api/appointments").json()[0]
     assert appointment["status"] == "confirmed"
 
+    second_response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(barber_id),
+            "customer_id": "",
+            "new_customer_name": "Otro nombre cargado",
+            "new_customer_phone": " 999999999 ",
+            "service_id": str(service_id),
+            "starts_at": "2026-08-01T13:00",
+            "notes": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert second_response.status_code == 303
+    assert len(client.get("/api/customers").json()) == 1
+    assert len(client.get("/api/appointments").json()) == 2
+    customers_module = client.get("/admin?module=clientes")
+    assert customers_module.status_code == 200
+    assert "Cliente Nuevo" in customers_module.text
+
+    third_response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(barber_id),
+            "customer_id": "",
+            "new_customer_name": "Marcelo Vecino",
+            "new_customer_phone": "",
+            "service_id": str(service_id),
+            "starts_at": "2026-08-01T14:00",
+            "notes": "Cliente sin telefono",
+        },
+        follow_redirects=False,
+    )
+
+    assert third_response.status_code == 303
+    customers = client.get("/api/customers").json()
+    assert len(customers) == 2
+    marcelo = next(customer for customer in customers if customer["full_name"] == "Marcelo Vecino")
+    assert marcelo["phone"] is None
+    assert "Marcelo Vecino" in client.get("/admin?module=clientes").text
+
+
+def test_admin_appointment_form_scopes_catalog_options_by_shop(client: TestClient) -> None:
+    shop_a = client.post("/api/barber-shops", json={"name": "Agenda A"}).json()
+    shop_b = client.post("/api/barber-shops", json={"name": "Agenda B"}).json()
+    service_a = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_a["id"],
+            "name": "Corte A",
+            "duration_minutes": 30,
+            "price": "10000.00",
+        },
+    ).json()
+    service_b = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_b["id"],
+            "name": "Corte B",
+            "duration_minutes": 30,
+            "price": "12000.00",
+        },
+    ).json()
+    barber_a = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_a["id"], "name": "Profesional A", "service_ids": [service_a["id"]]},
+    ).json()
+    barber_b = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_b["id"], "name": "Profesional B", "service_ids": [service_b["id"]]},
+    ).json()
+    customer_a = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_a["id"], "full_name": "Cliente A", "phone": "111"},
+    ).json()
+    customer_b = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_b["id"], "full_name": "Cliente B", "phone": "222"},
+    ).json()
+
+    response = client.get("/admin")
+
+    assert response.status_code == 200
+    assert 'id="appointmentShopSelect"' in response.text
+    assert f'value="{service_a["id"]}" data-shop-id="{shop_a["id"]}"' in response.text
+    assert f'value="{service_b["id"]}" data-shop-id="{shop_b["id"]}"' in response.text
+    assert f'value="{barber_a["id"]}" data-shop-id="{shop_a["id"]}"' in response.text
+    assert f'value="{barber_b["id"]}" data-shop-id="{shop_b["id"]}"' in response.text
+    assert f'value="{customer_a["id"]}" data-shop-id="{shop_a["id"]}"' in response.text
+    assert f'value="{customer_b["id"]}" data-shop-id="{shop_b["id"]}"' in response.text
+    assert "syncAppointmentCatalog" in response.text
+
 
 def test_admin_can_edit_core_management_records(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Edit Demo"})

@@ -26,10 +26,9 @@ class Customer(TimestampMixin, Base):
         index=True,
     )
     full_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    phone: Mapped[str] = mapped_column(String(30), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(255))
     notes: Mapped[str | None] = mapped_column(Text)
 
     barber_shop: Mapped[BarberShop] = relationship(back_populates="customers")
     appointments: Mapped[list[Appointment]] = relationship(back_populates="customer")
-

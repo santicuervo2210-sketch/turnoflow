@@ -875,7 +875,7 @@ def admin_create_customer(
     request: Request,
     barber_shop_id: int = Form(...),
     full_name: str = Form(...),
-    phone: str = Form(...),
+    phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
     notes: str | None = Form(default=None),
     session: Session = Depends(get_db),
@@ -884,16 +884,26 @@ def admin_create_customer(
     if redirect is not None:
         return redirect
 
-    _save(
-        session,
-        Customer(
-            barber_shop_id=barber_shop_id,
-            full_name=full_name,
-            phone=phone,
-            email=email or None,
-            notes=notes or None,
-        ),
-    )
+    normalized_phone = phone.strip() if phone and phone.strip() else None
+    existing_customer = None
+    if normalized_phone:
+        existing_customer = session.scalars(
+            select(Customer).where(
+                Customer.barber_shop_id == barber_shop_id,
+                Customer.phone == normalized_phone,
+            )
+        ).first()
+    if existing_customer is None:
+        _save(
+            session,
+            Customer(
+                barber_shop_id=barber_shop_id,
+                full_name=full_name.strip(),
+                phone=normalized_phone,
+                email=email or None,
+                notes=notes or None,
+            ),
+        )
     return _redirect_to("/admin")
 
 
@@ -902,7 +912,7 @@ def admin_edit_customer(
     request: Request,
     customer_id: int,
     full_name: str = Form(...),
-    phone: str = Form(...),
+    phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
     notes: str | None = Form(default=None),
     session: Session = Depends(get_db),
@@ -914,8 +924,8 @@ def admin_edit_customer(
     if redirect is not None:
         return redirect
 
-    customer.full_name = full_name
-    customer.phone = phone
+    customer.full_name = full_name.strip()
+    customer.phone = phone.strip() if phone and phone.strip() else None
     customer.email = email or None
     customer.notes = notes or None
     session.commit()
@@ -1066,16 +1076,27 @@ def admin_create_appointment(
             if customer is None or customer.barber_shop_id != barber.barber_shop_id:
                 raise SchedulingError("Cliente invalido.")
         else:
-            if not new_customer_name or not new_customer_phone:
-                raise SchedulingError("Carga un cliente existente o nombre y telefono del cliente nuevo.")
-            customer = Customer(
-                barber_shop_id=barber.barber_shop_id,
-                full_name=new_customer_name,
-                phone=new_customer_phone,
-            )
-            session.add(customer)
-            session.commit()
-            session.refresh(customer)
+            normalized_name = (new_customer_name or "").strip()
+            normalized_phone = (new_customer_phone or "").strip()
+            if not normalized_name:
+                raise SchedulingError("Carga un cliente existente o el nombre del cliente nuevo.")
+            customer = None
+            if normalized_phone:
+                customer = session.scalars(
+                    select(Customer).where(
+                        Customer.barber_shop_id == barber.barber_shop_id,
+                        Customer.phone == normalized_phone,
+                    )
+                ).first()
+            if customer is None:
+                customer = Customer(
+                    barber_shop_id=barber.barber_shop_id,
+                    full_name=normalized_name,
+                    phone=normalized_phone or None,
+                )
+                session.add(customer)
+                session.commit()
+                session.refresh(customer)
             parsed_customer_id = customer.id
 
         appointment = create_appointment(
