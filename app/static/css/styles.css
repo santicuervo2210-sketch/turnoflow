@@ -1493,3 +1493,54 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.tf-day-grid {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tf-day-option {
+  margin: 0;
+  min-width: 0;
+  position: relative;
+}
+
+.tf-day-option input {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.tf-day-option span {
+  align-items: center;
+  background: #f7f6fd;
+  border: 1px solid var(--tf-line);
+  border-radius: 8px;
+  color: var(--tf-muted);
+  cursor: pointer;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0.45rem 0.35rem;
+  text-align: center;
+}
+
+.tf-day-option input:checked + span {
+  background: #33265f;
+  border-color: #33265f;
+  color: #fff;
+}
+
+.tf-day-option input:focus-visible + span {
+  box-shadow: 0 0 0 0.2rem rgb(111 61 255 / 20%);
+  outline: 2px solid #6f3dff;
+}
+
+@media (max-width: 575.98px) {
+  .tf-day-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

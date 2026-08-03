@@ -28,6 +28,7 @@ from app.models import (
     WorkingSchedule,
 )
 from app.services.appointments import (
+    ALL_WEEKDAYS,
     BUSINESS_WEEKDAYS,
     DEFAULT_CLOSING_TIME,
     DEFAULT_OPENING_TIME,
@@ -35,6 +36,7 @@ from app.services.appointments import (
     activate_barber_shop,
     barber_can_perform_service,
     business_hours_for_shop,
+    business_working_days_for_shop,
     cancel_appointment,
     create_appointment,
     get_available_slots,
@@ -339,6 +341,29 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "customers": customers,
         "general_hours_by_shop": {
             shop.id: business_hours_for_shop(session, shop.id) for shop in shops
+        },
+        "general_working_days_by_shop": {
+            shop.id: business_working_days_for_shop(session, shop.id) for shop in shops
+        },
+        "working_days_by_barber": {
+            barber.id: sorted(
+                schedule.day_of_week
+                for schedule in barber.working_schedules
+                if schedule.is_active
+            )
+            or list(BUSINESS_WEEKDAYS)
+            for barber in barbers
+        },
+        "working_hours_by_barber": {
+            barber.id: next(
+                (
+                    (schedule.start_time, schedule.end_time)
+                    for schedule in barber.working_schedules
+                    if schedule.is_active
+                ),
+                business_hours_for_shop(session, barber.barber_shop_id),
+            )
+            for barber in barbers
         },
         "weekday_labels": ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"),
         "schedules": list(
@@ -971,6 +996,7 @@ def admin_update_business_hours(
     barber_shop_id: int,
     opening_time: time = Form(...),
     closing_time: time = Form(...),
+    working_days: list[int] = Form(default=[]),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
@@ -981,6 +1007,14 @@ def admin_update_business_hours(
             request,
             session,
             "La hora de apertura debe ser anterior a la de cierre.",
+            selected_module="configuracion",
+        )
+    selected_days = sorted(set(working_days))
+    if not selected_days or any(day not in ALL_WEEKDAYS for day in selected_days):
+        return _admin_error_response(
+            request,
+            session,
+            "Selecciona al menos un dia de trabajo valido.",
             selected_module="configuracion",
         )
 
@@ -1000,7 +1034,7 @@ def admin_update_business_hours(
         )
         for schedule in schedules:
             schedule.is_active = False
-        for day_of_week in BUSINESS_WEEKDAYS:
+        for day_of_week in selected_days:
             matching_schedule = next(
                 (
                     schedule
@@ -1109,13 +1143,14 @@ def admin_create_barber(
         email=email or None,
     )
     opening_time, closing_time = business_hours_for_shop(session, barber_shop_id)
+    working_days = business_working_days_for_shop(session, barber_shop_id)
     barber.working_schedules = [
         WorkingSchedule(
             day_of_week=day_of_week,
             start_time=opening_time,
             end_time=closing_time,
         )
-        for day_of_week in BUSINESS_WEEKDAYS
+        for day_of_week in working_days
     ]
     if service_ids:
         services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all())
@@ -1315,7 +1350,9 @@ def admin_delete_customer(
 def admin_create_working_schedule(
     request: Request,
     barber_id: int = Form(...),
-    day_of_week: int = Form(...),
+    day_of_week: int | None = Form(default=None),
+    days_of_week: list[int] = Form(default=[]),
+    replace_week: bool = Form(default=False),
     start_time: time = Form(...),
     end_time: time = Form(...),
     session: Session = Depends(get_db),
@@ -1327,7 +1364,8 @@ def admin_create_working_schedule(
     if redirect is not None:
         return redirect
 
-    if day_of_week < 0 or day_of_week > 5 or start_time >= end_time:
+    selected_days = sorted(set(days_of_week or ([] if day_of_week is None else [day_of_week])))
+    if not selected_days or any(day not in ALL_WEEKDAYS for day in selected_days) or start_time >= end_time:
         return _panel_template_response(
             request,
             "admin/index.html",
@@ -1335,15 +1373,50 @@ def admin_create_working_schedule(
                 request,
                 session,
                 shop_id=_current_shop_id(request, session),
-                error="El horario debe tener un dia valido y el inicio debe ser anterior al fin.",
+                error="Selecciona al menos un dia valido y verifica que el inicio sea anterior al fin.",
+                selected_module="equipo",
             ),
             status_code=HTTPStatus.BAD_REQUEST,
         )
 
+    if replace_week:
+        schedules = list(
+            session.scalars(
+                select(WorkingSchedule).where(WorkingSchedule.barber_id == barber_id)
+            ).all()
+        )
+        for schedule in schedules:
+            schedule.is_active = False
+        for selected_day in selected_days:
+            matching_schedule = next(
+                (
+                    schedule
+                    for schedule in schedules
+                    if schedule.day_of_week == selected_day
+                    and schedule.start_time == start_time
+                    and schedule.end_time == end_time
+                ),
+                None,
+            )
+            if matching_schedule is None:
+                session.add(
+                    WorkingSchedule(
+                        barber_id=barber_id,
+                        day_of_week=selected_day,
+                        start_time=start_time,
+                        end_time=end_time,
+                    )
+                )
+            else:
+                matching_schedule.is_active = True
+        session.commit()
+        return _redirect_to("/admin?module=equipo")
+
+    selected_day = selected_days[0]
     duplicate_schedule = session.scalars(
         select(WorkingSchedule).where(
             WorkingSchedule.barber_id == barber_id,
-            WorkingSchedule.day_of_week == day_of_week,
+            WorkingSchedule.day_of_week == selected_day,
             WorkingSchedule.start_time < end_time,
             WorkingSchedule.end_time > start_time,
         )
@@ -1365,7 +1438,7 @@ def admin_create_working_schedule(
         session,
         WorkingSchedule(
             barber_id=barber_id,
-            day_of_week=day_of_week,
+            day_of_week=selected_day,
             start_time=start_time,
             end_time=end_time,
         ),
@@ -1389,7 +1462,7 @@ def admin_edit_working_schedule(
     if redirect is not None:
         return redirect
 
-    if day_of_week < 0 or day_of_week > 5 or start_time >= end_time:
+    if day_of_week not in ALL_WEEKDAYS or start_time >= end_time:
         return _admin_error_response(
             request,
             session,

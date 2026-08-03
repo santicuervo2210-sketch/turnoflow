@@ -16,6 +16,7 @@ ACTIVE_ACCESS_STATUS = "active"
 SUSPENDED_ACCESS_STATUS = "suspended"
 SLOT_STEP_MINUTES = 15
 BUSINESS_WEEKDAYS = tuple(range(6))
+ALL_WEEKDAYS = tuple(range(7))
 DEFAULT_OPENING_TIME = time(9, 0)
 DEFAULT_CLOSING_TIME = time(18, 0)
 
@@ -108,7 +109,7 @@ def business_hours_for_shop(session: Session, barber_shop_id: int) -> tuple[time
         .join(WorkingSchedule.barber)
         .where(
             Barber.barber_shop_id == barber_shop_id,
-            WorkingSchedule.day_of_week.in_(BUSINESS_WEEKDAYS),
+            WorkingSchedule.day_of_week.in_(ALL_WEEKDAYS),
             WorkingSchedule.is_active.is_(True),
         )
         .order_by(WorkingSchedule.day_of_week, WorkingSchedule.id)
@@ -118,14 +119,25 @@ def business_hours_for_shop(session: Session, barber_shop_id: int) -> tuple[time
     return schedule.start_time, schedule.end_time
 
 
+def business_working_days_for_shop(session: Session, barber_shop_id: int) -> tuple[int, ...]:
+    working_days = session.scalars(
+        select(WorkingSchedule.day_of_week)
+        .join(WorkingSchedule.barber)
+        .where(
+            Barber.barber_shop_id == barber_shop_id,
+            WorkingSchedule.is_active.is_(True),
+        )
+        .distinct()
+        .order_by(WorkingSchedule.day_of_week)
+    ).all()
+    return tuple(working_days) if working_days else BUSINESS_WEEKDAYS
+
+
 def _working_windows(
     session: Session,
     barber: Barber,
     target_date: date,
 ) -> list[tuple[time, time]]:
-    if target_date.weekday() not in BUSINESS_WEEKDAYS:
-        return []
-
     schedules = session.scalars(
         select(WorkingSchedule).where(
             WorkingSchedule.barber_id == barber.id,
@@ -135,6 +147,12 @@ def _working_windows(
     ).all()
     if schedules:
         return [(schedule.start_time, schedule.end_time) for schedule in schedules]
+
+    has_configured_week = session.scalars(
+        select(WorkingSchedule.id).where(WorkingSchedule.barber_id == barber.id).limit(1)
+    ).first()
+    if has_configured_week is not None or target_date.weekday() not in BUSINESS_WEEKDAYS:
+        return []
 
     return [business_hours_for_shop(session, barber.barber_shop_id)]
 
@@ -186,9 +204,7 @@ def ensure_slot_is_available(
         for opening_time, closing_time in working_windows
     )
     if not is_inside_schedule:
-        if starts_at.weekday() == 6:
-            raise SchedulingError("El negocio no toma turnos los domingos.")
-        raise SchedulingError("El horario elegido esta fuera de la jornada del profesional.")
+        raise SchedulingError("El profesional no trabaja en el dia y horario elegidos.")
 
     overlapping_appointment = session.scalars(
         _active_appointments_query(

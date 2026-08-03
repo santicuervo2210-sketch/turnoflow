@@ -209,7 +209,7 @@ def test_suspended_shop_cannot_create_appointments(client: TestClient) -> None:
     assert activate_response.json()["access_status"] == "active"
 
 
-def test_default_business_hours_allow_monday_to_saturday_and_close_sunday(client: TestClient) -> None:
+def test_default_business_hours_close_sunday_until_it_is_configured(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Horario Simple"}).json()["id"]
     service_id = client.post(
         "/api/services",
@@ -245,7 +245,29 @@ def test_default_business_hours_allow_monday_to_saturday_and_close_sunday(client
 
     assert saturday.status_code == 201
     assert sunday.status_code == 400
-    assert sunday.json()["detail"] == "El negocio no toma turnos los domingos."
+    assert sunday.json()["detail"] == "El profesional no trabaja en el dia y horario elegidos."
+
+    sunday_schedule = client.post(
+        "/api/working-schedules",
+        json={
+            "barber_id": barber_id,
+            "day_of_week": 6,
+            "start_time": "09:00:00",
+            "end_time": "18:00:00",
+        },
+    )
+    sunday_after_configuration = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-09T10:00:00",
+        },
+    )
+
+    assert sunday_schedule.status_code == 201
+    assert sunday_after_configuration.status_code == 201
 
 
 def test_custom_appointment_duration_is_saved_and_preserved_when_rescheduled(client: TestClient) -> None:

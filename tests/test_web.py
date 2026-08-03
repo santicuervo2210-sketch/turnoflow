@@ -1293,7 +1293,7 @@ def test_admin_cancel_shows_released_slot_notice(client: TestClient) -> None:
     assert "Mensaje simulado" in response.text
 
 
-def test_admin_general_hours_apply_monday_to_saturday_and_keep_sunday_closed(client: TestClient) -> None:
+def test_admin_general_hours_apply_only_selected_working_days(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Spa Horarios"}).json()["id"]
     barber_id = client.post(
         "/api/barbers",
@@ -1302,20 +1302,61 @@ def test_admin_general_hours_apply_monday_to_saturday_and_keep_sunday_closed(cli
 
     response = client.post(
         f"/admin/barber-shops/{shop_id}/hours",
-        data={"opening_time": "10:00", "closing_time": "19:00"},
+        data={
+            "opening_time": "10:00",
+            "closing_time": "19:00",
+            "working_days": ["0", "2", "6"],
+        },
         follow_redirects=False,
     )
 
     assert response.status_code == 303
     schedules = client.get("/api/working-schedules", params={"barber_id": barber_id}).json()
     active_schedules = [schedule for schedule in schedules if schedule["is_active"]]
-    assert {schedule["day_of_week"] for schedule in active_schedules} == set(range(6))
+    assert {schedule["day_of_week"] for schedule in active_schedules} == {0, 2, 6}
     assert all(schedule["start_time"] == "10:00:00" for schedule in active_schedules)
     assert all(schedule["end_time"] == "19:00:00" for schedule in active_schedules)
 
     configuration = client.get("/admin?module=configuracion")
-    assert "Horario general, lunes a sabado" in configuration.text
-    assert "El domingo permanece cerrado" in configuration.text
+    assert "Dias y horario general" in configuration.text
+    assert "Los dias desmarcados quedan cerrados" in configuration.text
+
+
+def test_admin_weekly_schedule_replaces_days_and_accepts_sunday(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Agenda semanal"}).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Diego", "service_ids": []},
+    ).json()["id"]
+
+    response = client.post(
+        "/admin/working-schedules",
+        data={
+            "barber_id": str(barber_id),
+            "days_of_week": ["1", "4", "6"],
+            "replace_week": "true",
+            "start_time": "09:30",
+            "end_time": "19:30",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    schedules = client.get("/api/working-schedules", params={"barber_id": barber_id}).json()
+    active_schedules = [schedule for schedule in schedules if schedule["is_active"]]
+    assert {schedule["day_of_week"] for schedule in active_schedules} == {1, 4, 6}
+    assert all(schedule["start_time"] == "09:30:00" for schedule in active_schedules)
+    assert all(schedule["end_time"] == "19:30:00" for schedule in active_schedules)
+
+
+def test_appointment_form_accepts_thirty_minute_duration(client: TestClient) -> None:
+    response = client.get("/admin")
+
+    duration_input = re.search(
+        r'<input class="form-control" type="number" min="5" max="480" step="5" name="duration_minutes" required>',
+        response.text,
+    )
+    assert duration_input is not None
 
 
 def test_owner_can_manage_one_shop_without_mixing_other_shop_data(client: TestClient) -> None:

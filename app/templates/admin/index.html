@@ -469,7 +469,7 @@
                 <form action="/admin/working-schedules/{{ schedule.id }}/edit" method="post" class="tf-inline-edit">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <select class="form-select form-select-sm" name="day_of_week" required>
-                    {% for option in range(6) %}
+                    {% for option in range(7) %}
                       <option value="{{ option }}" {% if schedule.day_of_week == option %}selected{% endif %}>{{ weekday_labels[option] }}</option>
                     {% endfor %}
                   </select>
@@ -537,16 +537,25 @@
                 {% endfor %}
               </div>
               {% set general_hours = general_hours_by_shop[shop.id] %}
+              {% set general_working_days = general_working_days_by_shop[shop.id] %}
               <form action="/admin/barber-shops/{{ shop.id }}/hours" method="post" class="tf-inline-form mt-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div>
-                  <label class="form-label mb-1">Horario general, lunes a sabado</label>
+                  <label class="form-label mb-2">Dias y horario general</label>
+                  <div class="tf-day-grid mb-2">
+                    {% for option in range(7) %}
+                      <label class="tf-day-option">
+                        <input type="checkbox" name="working_days" value="{{ option }}" {% if option in general_working_days %}checked{% endif %}>
+                        <span>{{ weekday_labels[option] }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
                   <div class="d-flex flex-wrap gap-2">
                     <input class="form-control form-control-sm" type="time" name="opening_time" value="{{ general_hours[0].strftime('%H:%M') }}" required>
                     <input class="form-control form-control-sm" type="time" name="closing_time" value="{{ general_hours[1].strftime('%H:%M') }}" required>
                     <button class="btn btn-sm btn-outline-primary" type="submit">Actualizar horario</button>
                   </div>
-                  <span class="form-text">El domingo permanece cerrado. Luego podes ajustar excepciones desde Equipo.</span>
+                  <span class="form-text">Los dias desmarcados quedan cerrados. Podes ajustar cada profesional desde Equipo.</span>
                 </div>
               </form>
               {% if is_owner_view and shop.access_status == "active" %}
@@ -741,7 +750,7 @@
             <div class="col-md-3">
               <label class="form-label">Duracion</label>
               <div class="input-group">
-                <input class="form-control" type="number" min="1" max="480" step="5" name="duration_minutes" required>
+                <input class="form-control" type="number" min="5" max="480" step="5" name="duration_minutes" required>
                 <span class="input-group-text">min</span>
               </div>
               <div class="form-text">Se completa segun el servicio.</div>
@@ -889,24 +898,31 @@
       <div class="modal-header"><h2 class="modal-title h5">Horario semanal</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
       <form action="/admin/working-schedules" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="replace_week" value="true">
         <div class="modal-body row g-3">
           <div class="col-12">
-            <select class="form-select" name="barber_id" required>
-              {% for barber in barbers %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
+            <label class="form-label">Profesional</label>
+            <select class="form-select" id="scheduleBarberSelect" name="barber_id" required>
+              {% for barber in barbers %}
+                {% set barber_hours = working_hours_by_barber[barber.id] %}
+                <option value="{{ barber.id }}" data-working-days="{{ working_days_by_barber[barber.id]|join(',') }}" data-start-time="{{ barber_hours[0].strftime('%H:%M') }}" data-end-time="{{ barber_hours[1].strftime('%H:%M') }}">{{ barber.name }}</option>
+              {% endfor %}
             </select>
           </div>
           <div class="col-12">
-            <select class="form-select" name="day_of_week" required>
-              <option value="0">Lunes</option>
-              <option value="1">Martes</option>
-              <option value="2">Miercoles</option>
-              <option value="3">Jueves</option>
-              <option value="4">Viernes</option>
-              <option value="5">Sabado</option>
-            </select>
+            <span class="form-label d-block">Dias que trabaja</span>
+            <div class="tf-day-grid" id="scheduleDayGrid">
+              {% for option in range(7) %}
+                <label class="tf-day-option">
+                  <input type="checkbox" name="days_of_week" value="{{ option }}">
+                  <span>{{ weekday_labels[option] }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="form-text">Marca todos los dias laborales. Los demas quedaran como descanso.</div>
           </div>
-          <div class="col-6"><input class="form-control" type="time" name="start_time" required></div>
-          <div class="col-6"><input class="form-control" type="time" name="end_time" required></div>
+          <div class="col-6"><label class="form-label">Desde</label><input class="form-control" type="time" name="start_time" required></div>
+          <div class="col-6"><label class="form-label">Hasta</label><input class="form-control" type="time" name="end_time" required></div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar horario</button></div>
       </form>
@@ -1023,6 +1039,28 @@
     };
     shopSelect.addEventListener("change", syncServices);
     syncServices();
+  })();
+
+  (() => {
+    const barberSelect = document.getElementById("scheduleBarberSelect");
+    const form = barberSelect?.closest("form");
+    if (!barberSelect || !form) return;
+    const dayInputs = Array.from(form.querySelectorAll('[name="days_of_week"]'));
+    const startInput = form.querySelector('[name="start_time"]');
+    const endInput = form.querySelector('[name="end_time"]');
+
+    const syncSchedule = () => {
+      const option = barberSelect.options[barberSelect.selectedIndex];
+      const workingDays = new Set((option?.dataset.workingDays || "").split(",").filter(Boolean));
+      dayInputs.forEach((input) => {
+        input.checked = workingDays.has(input.value);
+      });
+      if (startInput) startInput.value = option?.dataset.startTime || "09:00";
+      if (endInput) endInput.value = option?.dataset.endTime || "18:00";
+    };
+
+    barberSelect.addEventListener("change", syncSchedule);
+    syncSchedule();
   })();
 </script>
 {% endblock %}
