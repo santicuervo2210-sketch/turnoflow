@@ -222,6 +222,7 @@ def test_bot_webhook_resolves_shop_from_business_number(client: TestClient) -> N
             "to_business_number": "+5491199999999",
             "message": "cuanto sale corte",
         },
+        headers={"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"},
     )
 
     assert response.status_code == 200
@@ -239,10 +240,49 @@ def test_bot_webhook_rejects_unknown_business_number(client: TestClient) -> None
             "to_business_number": "+5491188888888",
             "message": "hola",
         },
+        headers={"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"},
     )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Business number is not configured"
+
+
+def test_bot_webhook_fails_closed_when_secret_is_missing(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "bot_webhook_secret", "")
+    response = client.post(
+        "/bot/webhook",
+        json={
+            "from_phone": "+5491111111111",
+            "to_business_number": "+5491188888888",
+            "message": "hola",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Webhook is not configured"
+
+
+def test_bot_webhook_requires_configured_secret(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "bot_webhook_secret", "webhook-secret-with-at-least-32-characters")
+    client.post(
+        "/api/barber-shops",
+        json={"name": "Webhook Secret Demo", "phone": "+5491177777777"},
+    )
+
+    payload = {
+        "from_phone": "+5491111111111",
+        "to_business_number": "+5491177777777",
+        "message": "hola",
+    }
+    missing_secret = client.post("/bot/webhook", json=payload)
+    valid_secret = client.post(
+        "/bot/webhook",
+        json=payload,
+        headers={"X-TurnoFlow-Webhook-Secret": "webhook-secret-with-at-least-32-characters"},
+    )
+
+    assert missing_secret.status_code == 401
+    assert valid_secret.status_code == 200
 
 
 def test_bot_answers_service_price_with_common_phrases(client: TestClient) -> None:

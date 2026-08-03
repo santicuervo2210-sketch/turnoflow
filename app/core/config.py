@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "changeme"
     session_secret: str = "change-this-secret-before-deploy"
+    bot_webhook_secret: str = ""
     error_alert_webhook_url: str | None = None
     login_rate_limit_per_minute: int = 30
     bot_webhook_rate_limit_per_minute: int = 120

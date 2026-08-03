@@ -22,6 +22,15 @@ def test_admin_dashboard_loads(client: TestClient) -> None:
     assert "Gestion" in response.text
 
 
+def test_security_headers_are_present(client: TestClient) -> None:
+    response = client.get("/health")
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "camera=()" in response.headers["Permissions-Policy"]
+
+
 def test_admin_modules_render_only_selected_content(client: TestClient) -> None:
     agenda_response = client.get("/admin")
     services_response = client.get("/admin?module=servicios")
@@ -124,7 +133,7 @@ def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch)
         data={
             "csrf_token": owner_csrf_token,
             "username": "cliente1",
-            "password": "clave1",
+            "password": "clave123",
             "role": "business_admin",
             "barber_shop_id": str(shop_one_id),
         },
@@ -135,7 +144,7 @@ def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch)
     client.get("/logout")
     business_login = client.post(
         "/login",
-        data={"username": "cliente1", "password": "clave1", "next_path": "/admin"},
+        data={"username": "cliente1", "password": "clave123", "next_path": "/admin"},
         follow_redirects=False,
     )
     assert business_login.status_code == 303
@@ -176,6 +185,60 @@ def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch)
     assert "Servicio propio" in client.get("/admin").text
 
 
+def test_business_admin_error_response_does_not_leak_other_shop(client: TestClient, monkeypatch) -> None:
+    shop_one = client.post("/api/barber-shops", json={"name": "Error Uno"}).json()
+    shop_two = client.post("/api/barber-shops", json={"name": "Error Dos"}).json()
+    barber = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_one["id"], "name": "Profesional Uno"},
+    ).json()
+
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "admin_username", "owner")
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    monkeypatch.setattr(settings, "session_secret", "test-secret-for-error-scope")
+
+    client.post(
+        "/login",
+        data={"username": "owner", "password": "secret", "next_path": "/owner"},
+        follow_redirects=False,
+    )
+    owner_csrf_token = _csrf_token_from(client, "/owner")
+    client.post(
+        "/owner/users",
+        data={
+            "csrf_token": owner_csrf_token,
+            "username": "error-admin",
+            "password": "clave123",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_one["id"]),
+        },
+        follow_redirects=False,
+    )
+    client.get("/logout")
+    client.post(
+        "/login",
+        data={"username": "error-admin", "password": "clave123", "next_path": "/admin"},
+        follow_redirects=False,
+    )
+    admin_csrf_token = _csrf_token_from(client, "/admin")
+
+    response = client.post(
+        "/admin/working-schedules",
+        data={
+            "csrf_token": admin_csrf_token,
+            "barber_id": str(barber["id"]),
+            "day_of_week": "0",
+            "start_time": "18:00",
+            "end_time": "09:00",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Error Uno" in response.text
+    assert "Error Dos" not in response.text
+
+
 def test_business_admin_cannot_view_other_shop_customer_portal(client: TestClient, monkeypatch) -> None:
     shop_one_response = client.post("/api/barber-shops", json={"name": "Portal Uno"})
     shop_two_response = client.post("/api/barber-shops", json={"name": "Portal Dos"})
@@ -208,7 +271,7 @@ def test_business_admin_cannot_view_other_shop_customer_portal(client: TestClien
         data={
             "csrf_token": owner_csrf_token,
             "username": "portal1",
-            "password": "clave1",
+            "password": "clave123",
             "role": "business_admin",
             "barber_shop_id": str(shop_one_id),
         },
@@ -217,7 +280,7 @@ def test_business_admin_cannot_view_other_shop_customer_portal(client: TestClien
     client.get("/logout")
     client.post(
         "/login",
-        data={"username": "portal1", "password": "clave1", "next_path": "/admin"},
+        data={"username": "portal1", "password": "clave123", "next_path": "/admin"},
         follow_redirects=False,
     )
 
@@ -267,6 +330,12 @@ def test_owner_can_generate_password_reset_link_and_user_can_change_password(cli
         follow_redirects=False,
     )
     assert reset_response.status_code == 303
+
+    short_reset_response = client.post(
+        "/password-reset",
+        data={"token": token, "password": "short"},
+    )
+    assert short_reset_response.status_code == 400
 
     new_login_response = client.post(
         "/login",
@@ -318,6 +387,25 @@ def test_admin_post_without_csrf_is_rejected_when_auth_enabled(client: TestClien
 
     assert response.status_code == 403
     assert "Sin token" not in client.get("/admin").text
+
+
+def test_bot_simulator_post_without_csrf_is_rejected_when_auth_enabled(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "admin_username", "owner")
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    monkeypatch.setattr(settings, "session_secret", "test-secret-for-bot-csrf")
+
+    login_response = client.post(
+        "/login",
+        data={"username": "owner", "password": "secret", "next_path": "/bot-simulator"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 303
+    assert client.get("/bot-simulator").status_code == 200
+
+    response = client.post("/bot-simulator/reset", data={}, follow_redirects=False)
+
+    assert response.status_code == 403
 
 
 def test_admin_can_create_barber_shop_from_form(client: TestClient) -> None:
@@ -504,6 +592,23 @@ def test_admin_can_create_appointment_with_new_customer_inline(client: TestClien
     marcelo = next(customer for customer in customers if customer["full_name"] == "Marcelo Vecino")
     assert marcelo["phone"] is None
     assert "Marcelo Vecino" in client.get("/admin?module=clientes").text
+
+    failed_response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(barber_id),
+            "customer_id": "",
+            "new_customer_name": "Cliente No Debe Quedar",
+            "new_customer_phone": "",
+            "service_id": str(service_id),
+            "starts_at": "2026-08-01T12:15",
+            "notes": "",
+        },
+        follow_redirects=False,
+    )
+
+    assert failed_response.status_code == 409
+    assert "Cliente No Debe Quedar" not in client.get("/admin?module=clientes").text
 
 
 def test_admin_appointment_form_scopes_catalog_options_by_shop(client: TestClient) -> None:

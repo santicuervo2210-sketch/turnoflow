@@ -14,6 +14,7 @@ from app.models import User, UserRole
 
 PASSWORD_ITERATIONS = 260_000
 PASSWORD_RESET_TOKEN_SECONDS = 60 * 60
+MIN_PASSWORD_LENGTH = 8
 
 
 def hash_password(password: str) -> str:
@@ -91,6 +92,9 @@ def create_password_reset_token(user: User, expires_in_seconds: int = PASSWORD_R
 
 
 def reset_password_with_token(session: Session, token: str, new_password: str) -> User | None:
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        return None
+
     try:
         raw_token = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
         user_id_text, expires_at_text, signature = raw_token.rsplit(":", 2)

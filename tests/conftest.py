@@ -5,6 +5,7 @@ os.environ["AUTO_CREATE_TABLES"] = "false"
 os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
 os.environ["ENVIRONMENT"] = "test"
 os.environ["AUTH_ENABLED"] = "false"
+os.environ["BOT_WEBHOOK_SECRET"] = "test-webhook-secret-with-at-least-32-characters"
 
 import pytest
 from fastapi.testclient import TestClient

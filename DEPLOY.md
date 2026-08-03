@@ -36,6 +36,7 @@ AUTH_ENABLED=true
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=usar-una-clave-real
 SESSION_SECRET=usar-un-texto-largo-aleatorio
+BOT_WEBHOOK_SECRET=usar-un-secreto-aleatorio-de-32-caracteres-o-mas
 BOT_AI_PROVIDER=rules
 ERROR_ALERT_WEBHOOK_URL=
 LOGIN_RATE_LIMIT_PER_MINUTE=30
@@ -158,6 +159,7 @@ AUTH_ENABLED=true
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=usar-la-clave-real
 SESSION_SECRET=usar-el-secret-real
+BOT_WEBHOOK_SECRET=usar-otra-clave-larga-para-el-webhook
 BOT_AI_PROVIDER=rules
 ERROR_ALERT_WEBHOOK_URL=
 LOGIN_RATE_LIMIT_PER_MINUTE=30
@@ -223,6 +225,7 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `DATABASE_URL` apunta a PostgreSQL, no SQLite.
 - [ ] `ADMIN_PASSWORD` no usa valor de ejemplo.
 - [ ] `SESSION_SECRET` tiene al menos 32 caracteres aleatorios.
+- [ ] `BOT_WEBHOOK_SECRET` tiene al menos 32 caracteres aleatorios y se envia en `X-TurnoFlow-Webhook-Secret`.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
 - [ ] `python -m alembic current` muestra `20260803_0009`.

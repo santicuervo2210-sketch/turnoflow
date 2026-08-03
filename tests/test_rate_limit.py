@@ -30,6 +30,7 @@ def test_bot_webhook_rate_limit_rejects_too_many_messages(client: TestClient, mo
             "to_business_number": "+5491111111111",
             "message": "hola",
         },
+        headers={"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"},
     )
     second_response = client.post(
         "/bot/webhook",
@@ -38,6 +39,7 @@ def test_bot_webhook_rate_limit_rejects_too_many_messages(client: TestClient, mo
             "to_business_number": "+5491111111111",
             "message": "hola de nuevo",
         },
+        headers={"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"},
     )
 
     assert first_response.status_code == 200

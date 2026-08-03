@@ -29,6 +29,9 @@ def configuration_errors() -> list[str]:
     if len(settings.session_secret) < 32 or settings.session_secret == "change-this-secret-before-deploy":
         errors.append("SESSION_SECRET debe ser largo, aleatorio y distinto al ejemplo.")
 
+    if not settings.bot_webhook_secret or len(settings.bot_webhook_secret) < 32:
+        errors.append("BOT_WEBHOOK_SECRET debe existir y tener al menos 32 caracteres.")
+
     if settings.sqlalchemy_database_url.startswith("sqlite"):
         errors.append("Para deploy usa PostgreSQL, no SQLite.")
 

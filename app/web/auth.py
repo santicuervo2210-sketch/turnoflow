@@ -139,7 +139,13 @@ def _is_protected_path(path: str) -> bool:
 
 
 def _requires_csrf(path: str, method: str) -> bool:
-    return method.upper() == "POST" and (path == "/admin" or path.startswith("/admin/") or path.startswith("/owner"))
+    return method.upper() == "POST" and (
+        path == "/admin"
+        or path.startswith("/admin/")
+        or path.startswith("/owner")
+        or path == "/bot-simulator"
+        or path.startswith("/bot-simulator/")
+    )
 
 
 async def _csrf_form_token(request: Request) -> str | None:

@@ -24,6 +24,7 @@
     <div class="bg-white border rounded-2 p-3">
       <h2 class="h5">Consultar horarios</h2>
       <form action="/bot-simulator/availability" method="post" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="col-12">
           <select class="form-select" name="barber_id" required>
             {% for barber in barbers %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
@@ -99,6 +100,7 @@
           </div>
         </div>
         <form action="/bot-simulator/reset" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="btn btn-sm btn-outline-secondary" type="submit">Nuevo turno</button>
         </form>
       </div>
@@ -106,6 +108,7 @@
         <div class="quick-actions mb-3">
           {% for action in bot_quick_actions %}
             <form action="/bot-simulator/message" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="message" value="{{ action.message }}">
               <button class="btn btn-sm btn-outline-primary" type="submit">{{ action.label }}</button>
             </form>
@@ -113,6 +116,7 @@
         </div>
       {% endif %}
       <form action="/bot-simulator/message" method="post" class="chat-input-form mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input class="form-control" name="message" placeholder="Escribi como cliente: quiero corte el sabado a las 10" required>
         <button class="btn btn-primary" type="submit">Enviar</button>
       </form>
@@ -137,6 +141,7 @@
                   <td>{{ slot.ends_at.strftime("%H:%M") }}</td>
                   <td>
                     <form action="/bot-simulator/book" method="post" class="d-flex gap-2">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                       <input type="hidden" name="barber_id" value="{{ selected_barber_id }}">
                       <input type="hidden" name="service_id" value="{{ selected_service_id }}">
                       <input type="hidden" name="starts_at" value="{{ slot.starts_at.isoformat() }}">

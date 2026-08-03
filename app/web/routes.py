@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from http import HTTPStatus
+import hmac
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -139,6 +140,8 @@ def _shop_allowed(request: Request, session: Session, barber_shop_id: int) -> bo
 
 
 def _redirect_if_shop_not_allowed(request: Request, session: Session, barber_shop_id: int) -> RedirectResponse | None:
+    if session.get(BarberShop, barber_shop_id) is None:
+        return _redirect_to("/admin")
     if _shop_allowed(request, session, barber_shop_id):
         return None
     return _redirect_to("/admin")
@@ -538,6 +541,23 @@ def _bot_context_extra(
     }
 
 
+def _bot_simulator_resource_error(
+    request: Request,
+    session: Session,
+    barber_id: int,
+    service_id: int,
+) -> str | None:
+    barber = session.get(Barber, barber_id)
+    service = session.get(Service, service_id)
+    if barber is None or service is None:
+        return "El profesional o servicio no existe."
+    if not _shop_allowed(request, session, barber.barber_shop_id):
+        return "Ese recurso no pertenece a tu negocio."
+    if service.barber_shop_id != barber.barber_shop_id:
+        return "El servicio no pertenece a ese negocio."
+    return None
+
+
 def _save(session: Session, item):
     try:
         session.add(item)
@@ -547,6 +567,24 @@ def _save(session: Session, item):
         session.rollback()
         raise
     return item
+
+
+def _admin_error_response(
+    request: Request,
+    session: Session,
+    message: str,
+    status_code: int = HTTPStatus.BAD_REQUEST,
+    selected_module: str | None = None,
+):
+    context = _dashboard_context(
+        request,
+        session,
+        shop_id=_current_shop_id(request, session),
+        error=message,
+    )
+    if selected_module is not None:
+        context["selected_module"] = selected_module
+    return _panel_template_response(request, "admin/index.html", context, status_code=status_code)
 
 
 @router.get("/")
@@ -572,7 +610,7 @@ def login_submit(
     session: Session = Depends(get_db),
 ):
     if is_rate_limited(
-        f"login:{_client_host(request)}:{username.strip().lower()}",
+        f"login:{_client_host(request)}",
         settings.login_rate_limit_per_minute,
     ):
         raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Too many login attempts")
@@ -676,18 +714,28 @@ def owner_create_user(
     if redirect is not None:
         return redirect
 
-    selected_role = UserRole(role)
-    parsed_shop_id = int(barber_shop_id) if barber_shop_id.strip() else None
+    try:
+        selected_role = UserRole(role)
+        parsed_shop_id = int(barber_shop_id) if barber_shop_id.strip() else None
+    except ValueError:
+        return _redirect_to("/owner")
+    if not username.strip() or len(password) < 8:
+        return _redirect_to("/owner")
     if selected_role == UserRole.BUSINESS_ADMIN and parsed_shop_id is None:
         return _redirect_to("/owner")
+    if parsed_shop_id is not None and session.get(BarberShop, parsed_shop_id) is None:
+        return _redirect_to("/owner")
 
-    create_user(
-        session,
-        username=username,
-        password=password,
-        role=selected_role,
-        barber_shop_id=parsed_shop_id,
-    )
+    try:
+        create_user(
+            session,
+            username=username,
+            password=password,
+            role=selected_role,
+            barber_shop_id=parsed_shop_id,
+        )
+    except IntegrityError:
+        session.rollback()
     return _redirect_to("/owner")
 
 
@@ -724,6 +772,8 @@ def admin_create_barber_shop(
     redirect = _redirect_if_not_owner(request, session)
     if redirect is not None:
         return redirect
+    if not name.strip():
+        return _redirect_to(_safe_next_path(next_path))
 
     clean_main_barber_name = main_barber_name.strip() if main_barber_name else ""
     shop = BarberShop(
@@ -778,6 +828,12 @@ def admin_create_service(
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
     if redirect is not None:
         return redirect
+    if not name.strip():
+        return _admin_error_response(request, session, "El servicio necesita un nombre.", selected_module="servicios")
+    if duration_minutes < 1 or duration_minutes > 480:
+        return _admin_error_response(request, session, "La duracion debe estar entre 1 y 480 minutos.", selected_module="servicios")
+    if price < 0:
+        return _admin_error_response(request, session, "El precio no puede ser negativo.", selected_module="servicios")
 
     _save(
         session,
@@ -806,6 +862,12 @@ def admin_edit_service(
     redirect = _redirect_if_shop_not_allowed(request, session, service.barber_shop_id)
     if redirect is not None:
         return redirect
+    if not name.strip():
+        return _admin_error_response(request, session, "El servicio necesita un nombre.", selected_module="servicios")
+    if duration_minutes < 1 or duration_minutes > 480:
+        return _admin_error_response(request, session, "La duracion debe estar entre 1 y 480 minutos.", selected_module="servicios")
+    if price < 0:
+        return _admin_error_response(request, session, "El precio no puede ser negativo.", selected_module="servicios")
 
     service.name = name
     service.duration_minutes = duration_minutes
@@ -827,6 +889,8 @@ def admin_create_barber(
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
     if redirect is not None:
         return redirect
+    if not name.strip():
+        return _admin_error_response(request, session, "El profesional necesita un nombre.", selected_module="equipo")
 
     barber = Barber(
         barber_shop_id=barber_shop_id,
@@ -858,12 +922,18 @@ def admin_edit_barber(
     redirect = _redirect_if_shop_not_allowed(request, session, barber.barber_shop_id)
     if redirect is not None:
         return redirect
+    if not name.strip():
+        return _admin_error_response(request, session, "El profesional necesita un nombre.", selected_module="equipo")
 
     barber.name = name
     barber.phone = phone or None
     barber.email = email or None
     if service_id.strip():
-        service = session.get(Service, int(service_id))
+        try:
+            parsed_service_id = int(service_id)
+        except ValueError:
+            return _admin_error_response(request, session, "Servicio invalido.", selected_module="equipo")
+        service = session.get(Service, parsed_service_id)
         if service is not None and service.barber_shop_id == barber.barber_shop_id:
             barber.services = [service]
     session.commit()
@@ -883,6 +953,8 @@ def admin_create_customer(
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
     if redirect is not None:
         return redirect
+    if not full_name.strip():
+        return _admin_error_response(request, session, "El cliente necesita un nombre.", selected_module="clientes")
 
     normalized_phone = phone.strip() if phone and phone.strip() else None
     existing_customer = None
@@ -923,6 +995,8 @@ def admin_edit_customer(
     redirect = _redirect_if_shop_not_allowed(request, session, customer.barber_shop_id)
     if redirect is not None:
         return redirect
+    if not full_name.strip():
+        return _admin_error_response(request, session, "El cliente necesita un nombre.", selected_module="clientes")
 
     customer.full_name = full_name.strip()
     customer.phone = phone.strip() if phone and phone.strip() else None
@@ -947,6 +1021,40 @@ def admin_create_working_schedule(
     redirect = _redirect_if_shop_not_allowed(request, session, barber.barber_shop_id)
     if redirect is not None:
         return redirect
+
+    if day_of_week < 0 or day_of_week > 6 or start_time >= end_time:
+        return _panel_template_response(
+            request,
+            "admin/index.html",
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error="El horario debe tener un dia valido y el inicio debe ser anterior al fin.",
+            ),
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
+
+    duplicate_schedule = session.scalars(
+        select(WorkingSchedule).where(
+            WorkingSchedule.barber_id == barber_id,
+            WorkingSchedule.day_of_week == day_of_week,
+            WorkingSchedule.start_time < end_time,
+            WorkingSchedule.end_time > start_time,
+        )
+    ).first()
+    if duplicate_schedule is not None:
+        return _panel_template_response(
+            request,
+            "admin/index.html",
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error="Ese horario ya esta cargado para el profesional.",
+            ),
+            status_code=HTTPStatus.BAD_REQUEST,
+        )
 
     _save(
         session,
@@ -976,12 +1084,29 @@ def admin_edit_working_schedule(
     if redirect is not None:
         return redirect
 
-    if start_time >= end_time:
-        return _panel_template_response(
+    if day_of_week < 0 or day_of_week > 6 or start_time >= end_time:
+        return _admin_error_response(
             request,
-            "admin/index.html",
-            _dashboard_context(request, session, error="El inicio del horario debe ser anterior al fin."),
-            status_code=HTTPStatus.BAD_REQUEST,
+            session,
+            "El horario debe tener un dia valido y el inicio debe ser anterior al fin.",
+            selected_module="configuracion",
+        )
+
+    duplicate_schedule = session.scalars(
+        select(WorkingSchedule).where(
+            WorkingSchedule.barber_id == schedule.barber_id,
+            WorkingSchedule.day_of_week == day_of_week,
+            WorkingSchedule.start_time < end_time,
+            WorkingSchedule.end_time > start_time,
+            WorkingSchedule.id != schedule_id,
+        )
+    ).first()
+    if duplicate_schedule is not None:
+        return _admin_error_response(
+            request,
+            session,
+            "Ese horario ya esta cargado para el profesional.",
+            selected_module="configuracion",
         )
 
     schedule.day_of_week = day_of_week
@@ -1011,7 +1136,12 @@ def admin_create_time_block(
         return _panel_template_response(
             request,
             "admin/index.html",
-            _dashboard_context(request, session, error="El inicio del bloqueo debe ser anterior al fin."),
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error="El inicio del bloqueo debe ser anterior al fin.",
+            ),
             status_code=HTTPStatus.BAD_REQUEST,
         )
 
@@ -1095,8 +1225,7 @@ def admin_create_appointment(
                     phone=normalized_phone or None,
                 )
                 session.add(customer)
-                session.commit()
-                session.refresh(customer)
+                session.flush()
             parsed_customer_id = customer.id
 
         appointment = create_appointment(
@@ -1109,10 +1238,16 @@ def admin_create_appointment(
         )
         update_appointment_status(session, appointment.id, AppointmentStatus.CONFIRMED)
     except SchedulingError as exc:
+        session.rollback()
         return _panel_template_response(
             request,
             "admin/index.html",
-            _dashboard_context(request, session, error=exc.detail),
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error=exc.detail,
+            ),
             status_code=exc.status_code,
         )
     return _redirect_to("/admin")
@@ -1140,7 +1275,13 @@ def admin_cancel_appointment(
     return _panel_template_response(
         request,
         "admin/index.html",
-        _dashboard_context(request, session, notice=notice, selected_module="rendimiento"),
+        _dashboard_context(
+            request,
+            session,
+            shop_id=_current_shop_id(request, session),
+            notice=notice,
+            selected_module="rendimiento",
+        ),
     )
 
 
@@ -1226,7 +1367,12 @@ def admin_reschedule_appointment(
         return _panel_template_response(
             request,
             "admin/index.html",
-            _dashboard_context(request, session, error=exc.detail),
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error=exc.detail,
+            ),
             status_code=exc.status_code,
         )
     return _redirect_to("/admin")
@@ -1245,7 +1391,32 @@ def admin_create_supply_sale(
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
     if redirect is not None:
         return redirect
-    parsed_appointment_id = int(appointment_id) if appointment_id.strip() else None
+    normalized_name = name.strip()
+    if not normalized_name or len(normalized_name) > 120:
+        return _admin_error_response(
+            request,
+            session,
+            "El ingreso necesita un nombre de hasta 120 caracteres.",
+            selected_module="agenda",
+        )
+    if quantity < 1 or quantity > 999:
+        return _admin_error_response(
+            request,
+            session,
+            "La cantidad debe estar entre 1 y 999.",
+            selected_module="agenda",
+        )
+    if unit_price < 0 or unit_price > Decimal("99999999.99"):
+        return _admin_error_response(
+            request,
+            session,
+            "El importe debe estar entre 0 y 99.999.999,99.",
+            selected_module="agenda",
+        )
+    try:
+        parsed_appointment_id = int(appointment_id) if appointment_id.strip() else None
+    except ValueError:
+        return _admin_error_response(request, session, "Turno invalido.", selected_module="agenda")
     if parsed_appointment_id is not None:
         appointment = session.get(Appointment, parsed_appointment_id)
         if appointment is None or appointment.barber_shop_id != barber_shop_id:
@@ -1255,7 +1426,7 @@ def admin_create_supply_sale(
             session,
             barber_shop_id=barber_shop_id,
             appointment_id=parsed_appointment_id,
-            name=name,
+            name=normalized_name,
             quantity=quantity,
             unit_price=unit_price,
         )
@@ -1263,7 +1434,12 @@ def admin_create_supply_sale(
         return _panel_template_response(
             request,
             "admin/index.html",
-            _dashboard_context(request, session, error=exc.detail),
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error=exc.detail,
+            ),
             status_code=exc.status_code,
         )
     return _redirect_to("/admin")
@@ -1283,6 +1459,13 @@ def admin_update_bot_settings(
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
     if redirect is not None:
         return redirect
+    if reminder_hours_before < 1 or reminder_hours_before > 168:
+        return _admin_error_response(
+            request,
+            session,
+            "El recordatorio debe configurarse entre 1 y 168 horas.",
+            selected_module="configuracion",
+        )
     update_bot_settings(
         session,
         barber_shop_id=barber_shop_id,
@@ -1301,6 +1484,9 @@ def admin_simulate_reminder(
     appointment_id: int,
     session: Session = Depends(get_db),
 ):
+    redirect = _redirect_if_appointment_not_allowed(request, session, appointment_id)
+    if redirect is not None:
+        return redirect
     reminder = next(
         (item for item in list_pending_reminders(session) if item.appointment_id == appointment_id),
         None,
@@ -1309,7 +1495,12 @@ def admin_simulate_reminder(
         return _panel_template_response(
             request,
             "admin/index.html",
-            _dashboard_context(request, session, error="No hay recordatorio pendiente para ese turno."),
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                error="No hay recordatorio pendiente para ese turno.",
+            ),
             status_code=HTTPStatus.BAD_REQUEST,
         )
 
@@ -1328,7 +1519,7 @@ def admin_simulate_reminder(
 def bot_simulator(request: Request, session: Session = Depends(get_db)):
     bot_shop_id = _bot_simulator_shop_id(request, session)
     bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
-    return templates.TemplateResponse(
+    return _panel_template_response(
         request,
         "bot/simulator.html",
         _dashboard_context(request, session, messages=[], **_bot_context_extra(session, bot_shop_id, bot_context)),
@@ -1389,6 +1580,9 @@ def bot_simulator_availability(
     bot_shop_id = _bot_simulator_shop_id(request, session)
     bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
     try:
+        resource_error = _bot_simulator_resource_error(request, session, barber_id, service_id)
+        if resource_error is not None:
+            raise SchedulingError(resource_error)
         slots = get_available_slots(
             session,
             barber_id=barber_id,
@@ -1406,7 +1600,7 @@ def bot_simulator_availability(
         slots = []
         messages = [("client", f"Quiero un turno el {target_date.isoformat()}"), ("bot", exc.detail)]
 
-    return templates.TemplateResponse(
+    return _panel_template_response(
         request,
         "bot/simulator.html",
         _dashboard_context(
@@ -1435,6 +1629,9 @@ def bot_simulator_book(
     bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
     messages = [("client", f"Reservar {starts_at:%Y-%m-%d %H:%M}")]
     try:
+        resource_error = _bot_simulator_resource_error(request, session, barber_id, service_id)
+        if resource_error is not None:
+            raise SchedulingError(resource_error)
         appointment = create_appointment(
             session,
             barber_id=barber_id,
@@ -1449,7 +1646,7 @@ def bot_simulator_book(
     except SchedulingError as exc:
         messages.append(("bot", exc.detail))
 
-    return templates.TemplateResponse(
+    return _panel_template_response(
         request,
         "bot/simulator.html",
         _dashboard_context(request, session, messages=messages, **_bot_context_extra(session, bot_shop_id, bot_context)),
@@ -1479,7 +1676,7 @@ def bot_simulator_message(
             ),
         ]
 
-    return templates.TemplateResponse(
+    return _panel_template_response(
         request,
         "bot/simulator.html",
         _dashboard_context(request, session, messages=messages, **_bot_context_extra(session, bot_shop_id, bot_context)),
@@ -1487,10 +1684,21 @@ def bot_simulator_message(
 
 
 @router.post("/bot/webhook", response_model=BotWebhookResponse)
-def bot_webhook(payload: BotWebhookRequest, session: Session = Depends(get_db)) -> dict:
+def bot_webhook(
+    request: Request,
+    payload: BotWebhookRequest,
+    session: Session = Depends(get_db),
+) -> dict:
+    if not settings.bot_webhook_secret:
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="Webhook is not configured")
+    if not hmac.compare_digest(
+        request.headers.get("X-TurnoFlow-Webhook-Secret", ""),
+        settings.bot_webhook_secret,
+    ):
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid webhook secret")
     business_number = payload.to_business_number.strip()
     if is_rate_limited(
-        f"bot-webhook:{business_number}:{payload.from_phone.strip()}",
+        f"bot-webhook:{_client_host(request)}",
         settings.bot_webhook_rate_limit_per_minute,
     ):
         raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Too many bot messages")
