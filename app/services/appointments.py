@@ -18,7 +18,7 @@ SLOT_STEP_MINUTES = 15
 BUSINESS_WEEKDAYS = tuple(range(6))
 ALL_WEEKDAYS = tuple(range(7))
 DEFAULT_OPENING_TIME = time(9, 0)
-DEFAULT_CLOSING_TIME = time(18, 0)
+DEFAULT_CLOSING_TIME = time(19, 0)
 
 
 class SchedulingError(Exception):
@@ -231,6 +231,7 @@ def create_appointment(
     starts_at: datetime,
     duration_minutes: int | None = None,
     notes: str | None = None,
+    status: AppointmentStatus = AppointmentStatus.PENDING,
 ) -> Appointment:
     barber = _get_required(session, Barber, barber_id, "Barber")
     customer = _get_required(session, Customer, customer_id, "Customer")
@@ -255,6 +256,7 @@ def create_appointment(
         service_id=service.id,
         starts_at=starts_at,
         ends_at=ends_at,
+        status=status.value,
         notes=notes,
     )
     session.add(appointment)

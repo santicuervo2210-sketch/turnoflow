@@ -2,6 +2,14 @@ from datetime import UTC, datetime, time, timedelta
 
 from fastapi.testclient import TestClient
 
+from app.services.bot_settings import _as_naive_datetime
+
+
+def test_reminders_normalize_postgres_timezone_datetimes() -> None:
+    postgres_value = datetime(2026, 8, 3, 20, 30, tzinfo=UTC)
+
+    assert _as_naive_datetime(postgres_value) == datetime(2026, 8, 3, 20, 30)
+
 
 def test_bot_settings_can_disable_bot(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Bot Settings Demo"})

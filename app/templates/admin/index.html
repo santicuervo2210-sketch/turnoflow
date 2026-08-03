@@ -60,22 +60,22 @@
   <aside class="tf-sidebar" aria-label="Modulos de gestion">
     <a class="tf-sidebar-brand" href="/admin">TurnoFlow</a>
     <nav class="tf-sidebar-nav">
-      <a href="/admin?module=agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
-      <a href="/admin?module=clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
-      <a href="/admin?module=servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
-      <a href="/admin?module=equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
-      <a href="/admin?module=configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuracion</a>
-      <a href="/admin?module=rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Rendimiento</a>
+      <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+      <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
+      <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
+      <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
+      <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuracion</a>
+      <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Rendimiento</a>
     </nav>
   </aside>
 
   <nav class="tf-mobile-nav" aria-label="Modulos de gestion">
-    <a href="/admin?module=agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
-    <a href="/admin?module=clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
-    <a href="/admin?module=servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
-    <a href="/admin?module=equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
-    <a href="/admin?module=configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Config</a>
-    <a href="/admin?module=rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Caja</a>
+    <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+    <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
+    <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
+    <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
+    <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Config</a>
+    <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Caja</a>
   </nav>
 
   <div class="tf-main">
@@ -85,7 +85,7 @@
         <a class="btn btn-sm btn-outline-primary" href="/owner/shops/manage/clear">Ver todos los negocios</a>
       </div>
     {% endif %}
-    {% if current_module == "agenda" %}
+    <div data-admin-module-panel="agenda" {% if current_module != "agenda" %}hidden{% endif %}>
     <section class="tf-hero" id="agenda">
       <div>
         <span class="stat-label">Agenda y caja</span>
@@ -293,7 +293,8 @@
         </table>
       </div>
     </section>
-    {% elif current_module == "clientes" %}
+    </div>
+    <div data-admin-module-panel="clientes" {% if current_module != "clientes" %}hidden{% endif %}>
 
     <section class="tf-panel" id="clientes">
       <div class="tf-panel-head">
@@ -376,7 +377,8 @@
         </div>
       {% endif %}
     </section>
-    {% elif current_module == "servicios" %}
+    </div>
+    <div data-admin-module-panel="servicios" {% if current_module != "servicios" %}hidden{% endif %}>
 
     <section class="tf-panel" id="servicios">
       <div class="tf-panel-head">
@@ -408,7 +410,8 @@
         {% endfor %}
       </div>
     </section>
-    {% elif current_module == "equipo" %}
+    </div>
+    <div data-admin-module-panel="equipo" {% if current_module != "equipo" %}hidden{% endif %}>
 
     <section class="tf-panel" id="equipo">
       <div class="tf-panel-head">
@@ -503,7 +506,8 @@
         </div>
       </div>
     </section>
-    {% elif current_module == "configuracion" %}
+    </div>
+    <div data-admin-module-panel="configuracion" {% if current_module != "configuracion" %}hidden{% endif %}>
 
     <section class="tf-panel" id="configuracion">
       <div class="tf-panel-head">
@@ -599,7 +603,8 @@
         </div>
       </div>
     </section>
-    {% elif current_module == "rendimiento" %}
+    </div>
+    <div data-admin-module-panel="rendimiento" {% if current_module != "rendimiento" %}hidden{% endif %}>
 
     <section class="tf-panel" id="rendimiento">
       <div class="tf-panel-head">
@@ -656,7 +661,7 @@
                     ${{ appointment.service.price }} cobrado
                   {% elif appointment.status == 'completed' %}
                     ${{ appointment.service.price }} pendiente
-                  {% elif appointment.starts_at < now %}
+                  {% elif as_naive_datetime(appointment.starts_at) < now %}
                     Vencido
                   {% else %}
                     Sin cierre
@@ -690,7 +695,7 @@
         </table>
       </div>
     </section>
-    {% endif %}
+    </div>
   </div>
 </div>
 
@@ -851,6 +856,26 @@
           <div class="col-6"><input class="form-control" name="phone" placeholder="Telefono"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
           <div class="col-12">
+            <span class="form-label d-block">Dias que trabaja</span>
+            <div class="tf-day-grid">
+              {% for option in range(7) %}
+                <label class="tf-day-option">
+                  <input type="checkbox" name="working_days" value="{{ option }}" checked>
+                  <span>{{ weekday_labels[option] }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="form-text">Todos vienen seleccionados. Desmarca domingo o cualquier dia libre.</div>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Desde</label>
+            <input class="form-control" type="time" name="opening_time" value="09:00" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label">Hasta</label>
+            <input class="form-control" type="time" name="closing_time" value="19:00" required>
+          </div>
+          <div class="col-12">
             <label class="form-label">Servicios que realiza</label>
             <div class="d-flex flex-wrap gap-2">
               {% for service in services %}
@@ -954,6 +979,40 @@
 
 <script>
   (() => {
+    if (window.location.pathname !== "/admin") return;
+    const links = Array.from(document.querySelectorAll("[data-admin-module-link]"));
+    const panels = Array.from(document.querySelectorAll("[data-admin-module-panel]"));
+    const validModules = new Set(panels.map((panel) => panel.dataset.adminModulePanel));
+
+    const activateModule = (moduleName, updateHistory = true) => {
+      const selectedModule = validModules.has(moduleName) ? moduleName : "agenda";
+      panels.forEach((panel) => {
+        panel.hidden = panel.dataset.adminModulePanel !== selectedModule;
+      });
+      links.forEach((link) => {
+        const isActive = link.dataset.adminModuleLink === selectedModule;
+        link.classList.toggle("active", isActive);
+        if (isActive) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      if (updateHistory) {
+        window.history.pushState({module: selectedModule}, "", `/admin?module=${selectedModule}`);
+      }
+      window.scrollTo({top: 0, behavior: "auto"});
+    };
+
+    links.forEach((link) => {
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        activateModule(link.dataset.adminModuleLink);
+      });
+    });
+    window.addEventListener("popstate", () => {
+      activateModule(new URLSearchParams(window.location.search).get("module") || "agenda", false);
+    });
+  })();
+
+  (() => {
     const shopSelect = document.getElementById("appointmentShopSelect");
     const form = document.querySelector("#appointmentModal form");
     if (!shopSelect || !form) return;
@@ -1056,7 +1115,7 @@
         input.checked = workingDays.has(input.value);
       });
       if (startInput) startInput.value = option?.dataset.startTime || "09:00";
-      if (endInput) endInput.value = option?.dataset.endTime || "18:00";
+      if (endInput) endInput.value = option?.dataset.endTime || "19:00";
     };
 
     barberSelect.addEventListener("change", syncSchedule);

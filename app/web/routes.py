@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import log_unhandled_error
 from app.core.rate_limit import is_rate_limited
 from app.db.session import get_db
 from app.models import (
@@ -228,6 +229,10 @@ def _admin_module_param(request: Request) -> str:
     return module if module in ADMIN_MODULES else "agenda"
 
 
+def _as_naive_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
 def _dashboard_context(request: Request, session: Session, shop_id: int | None = None, **extra):
     shops_query = select(BarberShop).order_by(BarberShop.id)
     if shop_id is not None:
@@ -268,7 +273,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         appointment
         for appointment in agenda_source_appointments
         if appointment.status in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
-        and appointment.starts_at >= now
+        and _as_naive_datetime(appointment.starts_at) >= now
     ]
     active_appointment_ids = {appointment.id for appointment in active_appointments}
     agenda_today_appointments = [appointment for appointment in active_appointments if appointment.starts_at.date() == today]
@@ -335,6 +340,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     context = {
         "request": request,
         "now": now,
+        "as_naive_datetime": _as_naive_datetime,
         "shops": shops,
         "services": services,
         "barbers": barbers,
@@ -960,7 +966,7 @@ def admin_create_barber_shop(
                 start_time=DEFAULT_OPENING_TIME,
                 end_time=DEFAULT_CLOSING_TIME,
             )
-            for day_of_week in BUSINESS_WEEKDAYS
+            for day_of_week in ALL_WEEKDAYS
         ]
         shop.barbers.append(main_barber)
     _save(session, shop)
@@ -1128,6 +1134,9 @@ def admin_create_barber(
     phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
     service_ids: list[int] = Form(default=[]),
+    working_days: list[int] = Form(default=[]),
+    opening_time: time = Form(default=DEFAULT_OPENING_TIME),
+    closing_time: time = Form(default=DEFAULT_CLOSING_TIME),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
@@ -1135,6 +1144,14 @@ def admin_create_barber(
         return redirect
     if not name.strip():
         return _admin_error_response(request, session, "El profesional necesita un nombre.", selected_module="equipo")
+    selected_days = sorted(set(working_days)) if working_days else list(ALL_WEEKDAYS)
+    if any(day not in ALL_WEEKDAYS for day in selected_days) or opening_time >= closing_time:
+        return _admin_error_response(
+            request,
+            session,
+            "Revisa los dias y el horario del profesional.",
+            selected_module="equipo",
+        )
 
     barber = Barber(
         barber_shop_id=barber_shop_id,
@@ -1142,15 +1159,13 @@ def admin_create_barber(
         phone=phone or None,
         email=email or None,
     )
-    opening_time, closing_time = business_hours_for_shop(session, barber_shop_id)
-    working_days = business_working_days_for_shop(session, barber_shop_id)
     barber.working_schedules = [
         WorkingSchedule(
             day_of_week=day_of_week,
             start_time=opening_time,
             end_time=closing_time,
         )
-        for day_of_week in working_days
+        for day_of_week in selected_days
     ]
     if service_ids:
         services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all())
@@ -1165,7 +1180,7 @@ def admin_create_barber(
             )
         barber.services = services
     _save(session, barber)
-    return _redirect_to("/admin")
+    return _redirect_to("/admin?module=equipo")
 
 
 @router.post("/admin/barbers/{barber_id}/edit")
@@ -1615,8 +1630,8 @@ def admin_create_appointment(
             starts_at=starts_at,
             duration_minutes=duration_minutes,
             notes=notes or None,
+            status=AppointmentStatus.CONFIRMED,
         )
-        update_appointment_status(session, appointment.id, AppointmentStatus.CONFIRMED)
     except SchedulingError as exc:
         session.rollback()
         return _panel_template_response(
@@ -1639,7 +1654,17 @@ def admin_create_appointment(
             status_code=HTTPStatus.CONFLICT,
             selected_module="agenda",
         )
-    return _redirect_to("/admin")
+    except Exception as exc:
+        session.rollback()
+        log_unhandled_error(request.method, request.url.path, exc)
+        return _admin_error_response(
+            request,
+            session,
+            "No se pudo confirmar el turno. Actualiza la agenda e intenta nuevamente.",
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            selected_module="agenda",
+        )
+    return _redirect_to("/admin?module=agenda")
 
 
 @router.post("/admin/appointments/{appointment_id}/cancel")

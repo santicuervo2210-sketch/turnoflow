@@ -11,6 +11,10 @@ from app.models.bot_settings import DEFAULT_GREETING_MESSAGE, DEFAULT_REMINDER_T
 from app.services.appointments import ACTIVE_ACCESS_STATUS, SchedulingError
 
 
+def _as_naive_datetime(value: datetime) -> datetime:
+    return value.replace(tzinfo=None) if value.tzinfo is not None else value
+
+
 @dataclass(frozen=True)
 class ReminderPreview:
     appointment_id: int
@@ -76,9 +80,7 @@ def list_pending_reminders(
     *,
     now: datetime | None = None,
 ) -> list[ReminderPreview]:
-    current_time = now or datetime.now(UTC).replace(tzinfo=None)
-    if current_time.tzinfo is not None:
-        current_time = current_time.replace(tzinfo=None)
+    current_time = _as_naive_datetime(now or datetime.now(UTC))
 
     appointments = session.scalars(
         select(Appointment)
@@ -102,7 +104,8 @@ def list_pending_reminders(
         reminder_window_end = current_time + timedelta(hours=settings.reminder_hours_before)
         if not settings.bot_enabled or not settings.reminders_enabled:
             continue
-        if appointment.starts_at > reminder_window_end:
+        appointment_starts_at = _as_naive_datetime(appointment.starts_at)
+        if appointment_starts_at > reminder_window_end:
             continue
 
         previews.append(

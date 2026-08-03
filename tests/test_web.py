@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 import re
 
 from fastapi.testclient import TestClient
@@ -14,12 +15,23 @@ def _csrf_token_from(client: TestClient, path: str) -> str:
     return match.group(1)
 
 
+def test_dashboard_normalizes_postgres_timezone_datetimes() -> None:
+    postgres_value = datetime(2026, 8, 3, 20, 30, tzinfo=UTC)
+
+    assert web_routes._as_naive_datetime(postgres_value) == datetime(2026, 8, 3, 20, 30)
+
+
 def test_admin_dashboard_loads(client: TestClient) -> None:
     response = client.get("/admin")
 
     assert response.status_code == 200
     assert "TurnoFlow" in response.text
     assert "Gestion" in response.text
+    assert response.text.count("data-admin-module-panel=") == 6
+    assert 'data-admin-module-panel="agenda"' in response.text
+    assert 'data-admin-module-panel="clientes"' in response.text
+    assert 'data-admin-module-panel="rendimiento"' in response.text
+    assert "window.history.pushState" in response.text
 
 
 def test_security_headers_are_present(client: TestClient) -> None:
@@ -31,17 +43,21 @@ def test_security_headers_are_present(client: TestClient) -> None:
     assert "camera=()" in response.headers["Permissions-Policy"]
 
 
-def test_admin_modules_render_only_selected_content(client: TestClient) -> None:
+def test_admin_modules_load_once_and_only_selected_panel_is_visible(client: TestClient) -> None:
     agenda_response = client.get("/admin")
     services_response = client.get("/admin?module=servicios")
 
     assert agenda_response.status_code == 200
     assert "Agenda del negocio" in agenda_response.text
-    assert "Precios, duracion y oferta" not in agenda_response.text
+    assert "Precios, duracion y oferta" in agenda_response.text
+    assert 'data-admin-module-panel="agenda" >' in agenda_response.text
+    assert 'data-admin-module-panel="servicios" hidden>' in agenda_response.text
 
     assert services_response.status_code == 200
     assert "Precios, duracion y oferta" in services_response.text
-    assert "Agenda del negocio" not in services_response.text
+    assert "Agenda del negocio" in services_response.text
+    assert 'data-admin-module-panel="agenda" hidden>' in services_response.text
+    assert 'data-admin-module-panel="servicios" >' in services_response.text
 
 
 def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestClient) -> None:
@@ -55,7 +71,8 @@ def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestCl
     assert rendimiento_response.status_code == 200
     assert "Historial y caja" in rendimiento_response.text
     assert "Ingresos extra registrados" in rendimiento_response.text
-    assert "action=\"/admin/supply-sales\"" not in rendimiento_response.text
+    assert 'data-admin-module-panel="agenda" hidden>' in rendimiento_response.text
+    assert 'data-admin-module-panel="rendimiento" >' in rendimiento_response.text
 
 
 def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> None:
@@ -438,6 +455,35 @@ def test_admin_can_create_barber_shop_from_form(client: TestClient) -> None:
     assert "Direccion: Street 1" in dashboard_response.text
     assert "Mica" in dashboard_response.text
 
+    schedules = client.get("/api/working-schedules", params={"barber_id": barber["id"]}).json()
+    assert {schedule["day_of_week"] for schedule in schedules if schedule["is_active"]} == set(range(7))
+    assert all(schedule["start_time"] == "09:00:00" for schedule in schedules)
+    assert all(schedule["end_time"] == "19:00:00" for schedule in schedules)
+
+
+def test_admin_creates_professional_with_selected_days_and_default_hours(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Equipo simple"}).json()["id"]
+
+    response = client.post(
+        "/admin/barbers",
+        data={
+            "barber_shop_id": str(shop_id),
+            "name": "Diego",
+            "working_days": ["0", "1", "2", "3", "4", "5"],
+            "opening_time": "09:00",
+            "closing_time": "19:00",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin?module=equipo"
+    barber = client.get("/api/barbers", params={"barber_shop_id": shop_id}).json()[0]
+    schedules = client.get("/api/working-schedules", params={"barber_id": barber["id"]}).json()
+    assert {schedule["day_of_week"] for schedule in schedules if schedule["is_active"]} == set(range(6))
+    assert all(schedule["start_time"] == "09:00:00" for schedule in schedules)
+    assert all(schedule["end_time"] == "19:00:00" for schedule in schedules)
+
 
 def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancelled(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Admin Agenda Demo"})
@@ -493,7 +539,7 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
     assert dashboard_response.status_code == 200
     assert "Agenda activa" in dashboard_response.text
     assert "11:00 - Santi Cliente" in dashboard_response.text
-    assert "Historial y caja" not in dashboard_response.text
+    assert 'data-admin-module-panel="rendimiento" hidden>' in dashboard_response.text
     history_response = client.get("/admin?module=rendimiento")
     assert history_response.status_code == 200
     assert "Historial y caja" in history_response.text
