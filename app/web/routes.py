@@ -59,6 +59,7 @@ templates = Jinja2Templates(directory="app/templates")
 BOT_SIMULATOR_CONTEXTS: dict[tuple[int, str], BotConversationContext] = {}
 BOT_SIMULATOR_FROM_PHONE = "+5491100000000"
 WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
+ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
 
 
 def _redirect_to(path: str) -> RedirectResponse:
@@ -179,6 +180,11 @@ def _int_query_param(request: Request, name: str, default: int, minimum: int, ma
     return max(minimum, min(value, maximum))
 
 
+def _admin_module_param(request: Request) -> str:
+    module = request.query_params.get("module", "agenda")
+    return module if module in ADMIN_MODULES else "agenda"
+
+
 def _dashboard_context(request: Request, session: Session, shop_id: int | None = None, **extra):
     shops_query = select(BarberShop).order_by(BarberShop.id)
     if shop_id is not None:
@@ -294,6 +300,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             "has_previous": page > 1,
             "has_next": page * per_page < total_filtered_appointments,
         },
+        "selected_module": _admin_module_param(request),
         "current_user": _current_user(request, session),
         "is_owner_view": _is_owner_request(request, session) or not settings.auth_enabled,
         "stats": {
@@ -1065,7 +1072,7 @@ def admin_cancel_appointment(
     return _panel_template_response(
         request,
         "admin/index.html",
-        _dashboard_context(request, session, notice=notice),
+        _dashboard_context(request, session, notice=notice, selected_module="rendimiento"),
     )
 
 

@@ -21,6 +21,19 @@ def test_admin_dashboard_loads(client: TestClient) -> None:
     assert "Gestion" in response.text
 
 
+def test_admin_modules_render_only_selected_content(client: TestClient) -> None:
+    agenda_response = client.get("/admin")
+    services_response = client.get("/admin?module=servicios")
+
+    assert agenda_response.status_code == 200
+    assert "Agenda de hoy y proximos" in agenda_response.text
+    assert "Precios, duracion y oferta" not in agenda_response.text
+
+    assert services_response.status_code == 200
+    assert "Precios, duracion y oferta" in services_response.text
+    assert "Agenda de hoy y proximos" not in services_response.text
+
+
 def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(settings, "auth_enabled", True)
     monkeypatch.setattr(settings, "admin_username", "owner")
@@ -298,7 +311,7 @@ def test_admin_can_create_barber_shop_from_form(client: TestClient) -> None:
     assert barber["name"] == "Mica"
     assert barber["phone"] == "222"
 
-    dashboard_response = client.get("/admin")
+    dashboard_response = client.get("/admin?module=configuracion")
     assert "Direccion: Street 1" in dashboard_response.text
     assert "Mica" in dashboard_response.text
 
@@ -356,8 +369,11 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
     dashboard_response = client.get("/admin")
     assert dashboard_response.status_code == 200
     assert "Agenda activa" in dashboard_response.text
-    assert "Historial y caja" in dashboard_response.text
     assert "11:00 - Santi Cliente" in dashboard_response.text
+    assert "Historial y caja" not in dashboard_response.text
+    history_response = client.get("/admin?module=rendimiento")
+    assert history_response.status_code == 200
+    assert "Historial y caja" in history_response.text
 
     cancel_response = client.post(f"/admin/appointments/{appointment_id}/cancel")
     assert cancel_response.status_code == 200

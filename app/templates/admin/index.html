@@ -1,29 +1,31 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set current_module = selected_module or "agenda" %}
 <div class="tf-workspace">
   <aside class="tf-sidebar" aria-label="Modulos de gestion">
     <a class="tf-sidebar-brand" href="/admin">TurnoFlow</a>
     <nav class="tf-sidebar-nav">
-      <a href="#agenda" class="active">Agenda</a>
-      <a href="#clientes">Clientes</a>
-      <a href="#servicios">Servicios</a>
-      <a href="#equipo">Equipo</a>
-      <a href="#configuracion">Configuracion</a>
-      <a href="#rendimiento">Rendimiento</a>
+      <a href="/admin?module=agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+      <a href="/admin?module=clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
+      <a href="/admin?module=servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
+      <a href="/admin?module=equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
+      <a href="/admin?module=configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuracion</a>
+      <a href="/admin?module=rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Rendimiento</a>
     </nav>
   </aside>
 
   <nav class="tf-mobile-nav" aria-label="Modulos de gestion">
-    <a href="#agenda" class="active">Agenda</a>
-    <a href="#clientes">Clientes</a>
-    <a href="#servicios">Servicios</a>
-    <a href="#equipo">Equipo</a>
-    <a href="#configuracion">Config</a>
-    <a href="#rendimiento">Caja</a>
+    <a href="/admin?module=agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+    <a href="/admin?module=clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
+    <a href="/admin?module=servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
+    <a href="/admin?module=equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
+    <a href="/admin?module=configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Config</a>
+    <a href="/admin?module=rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Caja</a>
   </nav>
 
   <div class="tf-main">
+    {% if current_module == "agenda" %}
     <section class="tf-hero" id="agenda">
       <div>
         <span class="stat-label">Agenda y caja</span>
@@ -32,7 +34,7 @@
       </div>
       <div class="tf-hero-actions">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Crear turno</button>
-        <a class="btn btn-outline-secondary" href="#rendimiento">Ver caja</a>
+        <a class="btn btn-outline-secondary" href="/admin?module=rendimiento">Ver caja</a>
       </div>
     </section>
 
@@ -63,6 +65,7 @@
         </div>
       </div>
       <form action="/admin" method="get" class="tf-filter-bar">
+        <input type="hidden" name="module" value="agenda">
         <input class="form-control" type="date" name="start_date" value="{{ dashboard_filters.start_date }}" aria-label="Fecha inicio">
         <input class="form-control" type="date" name="end_date" value="{{ dashboard_filters.end_date }}" aria-label="Fecha fin">
         <select class="form-select" name="per_page" aria-label="Turnos por pagina">
@@ -77,10 +80,10 @@
         <span>{{ dashboard_filters.total }} turnos en el rango</span>
         <div class="d-flex gap-2">
           {% if dashboard_filters.has_previous %}
-            <a class="btn btn-sm btn-outline-secondary" href="/admin?start_date={{ dashboard_filters.start_date }}&end_date={{ dashboard_filters.end_date }}&per_page={{ dashboard_filters.per_page }}&page={{ dashboard_filters.page - 1 }}">Anterior</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/admin?module=agenda&start_date={{ dashboard_filters.start_date }}&end_date={{ dashboard_filters.end_date }}&per_page={{ dashboard_filters.per_page }}&page={{ dashboard_filters.page - 1 }}">Anterior</a>
           {% endif %}
           {% if dashboard_filters.has_next %}
-            <a class="btn btn-sm btn-outline-secondary" href="/admin?start_date={{ dashboard_filters.start_date }}&end_date={{ dashboard_filters.end_date }}&per_page={{ dashboard_filters.per_page }}&page={{ dashboard_filters.page + 1 }}">Siguiente</a>
+            <a class="btn btn-sm btn-outline-secondary" href="/admin?module=agenda&start_date={{ dashboard_filters.start_date }}&end_date={{ dashboard_filters.end_date }}&per_page={{ dashboard_filters.per_page }}&page={{ dashboard_filters.page + 1 }}">Siguiente</a>
           {% endif %}
         </div>
       </div>
@@ -174,6 +177,7 @@
         {% endfor %}
       </div>
     </section>
+    {% elif current_module == "clientes" %}
 
     <section class="tf-panel" id="clientes">
       <div class="tf-panel-head">
@@ -208,6 +212,7 @@
         {% endfor %}
       </div>
     </section>
+    {% elif current_module == "servicios" %}
 
     <section class="tf-panel" id="servicios">
       <div class="tf-panel-head">
@@ -239,6 +244,7 @@
         {% endfor %}
       </div>
     </section>
+    {% elif current_module == "equipo" %}
 
     <section class="tf-panel" id="equipo">
       <div class="tf-panel-head">
@@ -325,6 +331,7 @@
         </div>
       </div>
     </section>
+    {% elif current_module == "configuracion" %}
 
     <section class="tf-panel" id="configuracion">
       <div class="tf-panel-head">
@@ -398,6 +405,7 @@
         </div>
       </div>
     </section>
+    {% elif current_module == "rendimiento" %}
 
     <section class="tf-panel" id="rendimiento">
       <div class="tf-panel-head">
@@ -501,6 +509,7 @@
         </table>
       </div>
     </section>
+    {% endif %}
   </div>
 </div>
 
