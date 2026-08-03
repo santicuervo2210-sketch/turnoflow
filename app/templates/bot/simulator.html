@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row g-4">
+  <section class="col-12">
+    <div class="page-head d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div>
+        <span class="stat-label">Canal conversacional</span>
+        <h1 class="h3 mb-1">Bot simulator</h1>
+        <p class="text-secondary mb-0">Reserva guiada usando la misma disponibilidad y los mismos turnos del sistema.</p>
+      </div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        {% if bot_ai_provider == "ollama" %}
+          <span class="badge text-bg-success">IA local: {{ ollama_model }}</span>
+        {% else %}
+          <span class="badge text-bg-secondary">Modo reglas</span>
+        {% endif %}
+        <a class="btn btn-outline-primary" href="/admin">Volver a gestion</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="col-12 col-xl-5 order-2 order-xl-1">
+    <div class="bg-white border rounded-2 p-3">
+      <h2 class="h5">Consultar horarios</h2>
+      <form action="/bot-simulator/availability" method="post" class="row g-2">
+        <div class="col-12">
+          <select class="form-select" name="barber_id" required>
+            {% for barber in barbers %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <select class="form-select" name="service_id" required>
+            {% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <input class="form-control" type="date" name="target_date" required>
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary w-100" type="submit">Consultar</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="bg-white border rounded-2 p-3 mt-3">
+      <h2 class="h5">Elegir cliente</h2>
+      <div class="list-group">
+        {% for customer in customers %}
+          <div class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ customer.full_name }}</span>
+            <span class="text-secondary small">#{{ customer.id }}</span>
+          </div>
+        {% else %}
+          <div class="list-group-item text-secondary">Sin clientes</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-white border rounded-2 p-3 mt-3">
+      <h2 class="h5">Turnos del sistema</h2>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <tbody>
+            {% for appointment in appointments[-6:] %}
+              <tr>
+                <td>#{{ appointment.id }}</td>
+                <td>{{ appointment.starts_at }}</td>
+                <td><span class="badge text-bg-secondary">{{ appointment.status }}</span></td>
+              </tr>
+            {% else %}
+              <tr><td class="text-secondary">Sin turnos registrados</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="col-12 col-xl-7 order-1 order-xl-2">
+    <div class="bg-white border rounded-2 p-3 chat-panel">
+      <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+        <h2 class="h5 mb-0">Conversacion</h2>
+        {% if bot_ai_provider == "ollama" %}
+          <span class="small text-success">Interpretacion por IA local activa</span>
+        {% else %}
+          <span class="small text-secondary">Interpretacion simple por comandos</span>
+        {% endif %}
+      </div>
+      <div class="bot-context-bar mb-3">
+        <div>
+          <span class="stat-label">Estado del flujo</span>
+          <div>
+            Servicio:
+            <strong>{% if bot_selected_service %}{{ bot_selected_service.name }}{% else %}sin elegir{% endif %}</strong>
+            <span class="mx-2 text-secondary">/</span>
+            Dia:
+            <strong>{% if bot_selected_date %}{{ bot_selected_date }}{% else %}sin elegir{% endif %}</strong>
+          </div>
+        </div>
+        <form action="/bot-simulator/reset" method="post">
+          <button class="btn btn-sm btn-outline-secondary" type="submit">Nuevo turno</button>
+        </form>
+      </div>
+      {% if bot_quick_actions %}
+        <div class="quick-actions mb-3">
+          {% for action in bot_quick_actions %}
+            <form action="/bot-simulator/message" method="post">
+              <input type="hidden" name="message" value="{{ action.message }}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">{{ action.label }}</button>
+            </form>
+          {% endfor %}
+        </div>
+      {% endif %}
+      <form action="/bot-simulator/message" method="post" class="chat-input-form mb-3">
+        <input class="form-control" name="message" placeholder="Escribi como cliente: quiero corte el sabado a las 10" required>
+        <button class="btn btn-primary" type="submit">Enviar</button>
+      </form>
+      <div class="d-grid gap-2 mb-3">
+        {% for sender, text in messages %}
+          <div class="message {% if sender == 'bot' %}message-bot{% else %}message-client{% endif %}">
+            <strong>{{ sender }}:</strong> {{ text }}
+          </div>
+        {% else %}
+          <div class="message text-secondary">Sin mensajes</div>
+        {% endfor %}
+      </div>
+
+      {% if slots %}
+        <h3 class="h6">Horarios disponibles</h3>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle">
+            <tbody>
+              {% for slot in slots[:12] %}
+                <tr>
+                  <td>{{ slot.starts_at.strftime("%Y-%m-%d %H:%M") }}</td>
+                  <td>{{ slot.ends_at.strftime("%H:%M") }}</td>
+                  <td>
+                    <form action="/bot-simulator/book" method="post" class="d-flex gap-2">
+                      <input type="hidden" name="barber_id" value="{{ selected_barber_id }}">
+                      <input type="hidden" name="service_id" value="{{ selected_service_id }}">
+                      <input type="hidden" name="starts_at" value="{{ slot.starts_at.isoformat() }}">
+                      <select class="form-select form-select-sm" name="customer_id" required>
+                        {% for customer in customers %}<option value="{{ customer.id }}">{{ customer.full_name }}</option>{% endfor %}
+                      </select>
+                      <button class="btn btn-sm btn-primary" type="submit">Reservar</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

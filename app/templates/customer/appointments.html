@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row g-4">
+  <section class="col-12">
+    <div class="page-head d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div>
+        <span class="stat-label">Portal del cliente</span>
+        <h1 class="h3 mb-1">Mis turnos confirmados</h1>
+        <p class="text-secondary mb-0">Vista simple para que el cliente consulte sus reservas activas.</p>
+      </div>
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <a class="btn btn-primary" href="/admin">Gestion</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="col-12 col-lg-4">
+    <div class="bg-white border rounded-2 p-3">
+      <h2 class="h5">Cliente</h2>
+      {% if selected_customer %}
+        <div class="mb-3">
+          <div class="fw-semibold">{{ selected_customer.full_name }}</div>
+          <div class="text-secondary small">{{ selected_customer.phone }}</div>
+        </div>
+      {% else %}
+        <p class="text-secondary mb-3">Todavia no hay clientes cargados.</p>
+      {% endif %}
+
+      <div class="list-group">
+        {% for customer in customers %}
+          <a
+            class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {% if selected_customer and customer.id == selected_customer.id %}active{% endif %}"
+            href="/customer/{{ customer.id }}/appointments"
+          >
+            <span>{{ customer.full_name }}</span>
+            <span class="small">#{{ customer.id }}</span>
+          </a>
+        {% else %}
+          <div class="list-group-item text-secondary">Sin clientes</div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  <section class="col-12 col-lg-8">
+    <div class="bg-white border rounded-2 p-3">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h2 class="h5 mb-0">Turnos confirmados</h2>
+        <span class="badge text-bg-success">{{ confirmed_appointments|length }} confirmados</span>
+      </div>
+
+      <div class="d-grid gap-3">
+        {% for appointment in confirmed_appointments %}
+          <article class="customer-appointment">
+            <div>
+              <div class="stat-label">{{ appointment.starts_at.strftime("%Y-%m-%d") }}</div>
+              <h3 class="h5 mb-1">{{ appointment.service.name }}</h3>
+              <div class="text-secondary">
+                {{ appointment.starts_at.strftime("%H:%M") }} a {{ appointment.ends_at.strftime("%H:%M") }}
+                con {{ appointment.barber.name }}
+              </div>
+            </div>
+            <div class="text-lg-end">
+              <span class="badge text-bg-success">Confirmado</span>
+              {% if appointment.is_paid %}
+                <div class="small text-success mt-2">Pagado{% if appointment.payment_method %}: {{ appointment.payment_method }}{% endif %}</div>
+              {% else %}
+                <div class="small text-secondary mt-2">Pago pendiente</div>
+              {% endif %}
+            </div>
+          </article>
+        {% else %}
+          <div class="empty-state">
+            <h3 class="h5 mb-1">Sin turnos confirmados</h3>
+            <p class="text-secondary mb-0">Cuando el bot o Gestion confirmen una reserva, va a aparecer aca.</p>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

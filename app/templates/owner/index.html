@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="admin-shell">
+  <section class="page-head d-flex justify-content-between align-items-center flex-wrap gap-3">
+    <div>
+      <span class="stat-label">Owner</span>
+      <h1 class="h3 mb-1">Clientes y accesos</h1>
+      <p class="text-secondary mb-0">Desde aca controlas quien puede usar TurnoFlow.</p>
+    </div>
+    <div class="top-actions">
+      <a class="btn btn-primary" href="/admin">Gestion completa</a>
+      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#userModal" type="button">Crear usuario</button>
+    </div>
+  </section>
+
+  <section class="bg-white border rounded-2 p-3">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+      <div>
+        <span class="stat-label">Negocios</span>
+        <h2 class="h5 mb-1">Acceso por cliente</h2>
+      </div>
+    </div>
+    <div class="stack-list">
+      {% for shop in shops %}
+        <div class="mini-row shop-row">
+          <div>
+            <strong>{{ shop.name }}</strong>
+            <div class="small text-secondary">{{ shop.phone or "Sin telefono" }} / {{ shop.address or "Sin direccion" }}</div>
+            <div class="team-pills">
+              {% for user in users if user.barber_shop_id == shop.id %}
+                <span>{{ user.username }} / {{ user.role }}</span>
+              {% else %}
+                <span>Sin usuario cliente</span>
+              {% endfor %}
+            </div>
+          </div>
+          {% if shop.access_status == "active" %}
+            <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="inline-action">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input class="form-control form-control-sm" name="reason" placeholder="Motivo">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Suspender</button>
+            </form>
+          {% else %}
+            <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-success" type="submit">Activar</button>
+            </form>
+          {% endif %}
+        </div>
+      {% else %}
+        <div class="empty-state text-secondary">Todavia no hay negocios creados.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="bg-white border rounded-2 p-3">
+    <h2 class="h5">Usuarios</h2>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mobile-stack-table">
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Negocio</th><th>Estado</th></tr></thead>
+        <tbody>
+          {% for user in users %}
+            <tr>
+              <td data-label="Usuario">{{ user.username }}</td>
+              <td data-label="Rol">{{ user.role }}</td>
+              <td data-label="Negocio">{% if user.barber_shop %}{{ user.barber_shop.name }}{% else %}TurnoFlow owner{% endif %}</td>
+              <td data-label="Estado">{% if user.is_active %}activo{% else %}inactivo{% endif %}</td>
+            </tr>
+          {% else %}
+            <tr><td class="text-secondary">Sin usuarios creados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title h5">Crear usuario</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
+      <form action="/owner/users" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="modal-body row g-3">
+          <div class="col-12">
+            <label class="form-label">Usuario</label>
+            <input class="form-control" name="username" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Clave temporal</label>
+            <input class="form-control" name="password" type="password" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Rol</label>
+            <select class="form-select" name="role" required>
+              <option value="business_admin">Cliente negocio</option>
+              <option value="owner">Owner TurnoFlow</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Negocio</label>
+            <select class="form-select" name="barber_shop_id">
+              <option value="">Sin negocio, solo owner</option>
+              {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-primary" type="submit">Crear acceso</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

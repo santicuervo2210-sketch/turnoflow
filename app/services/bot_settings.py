@@ -1,0 +1,120 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.models import Appointment, AppointmentStatus, BarberShop, BotSettings
+from app.models.bot_settings import DEFAULT_GREETING_MESSAGE, DEFAULT_REMINDER_TEMPLATE
+from app.services.appointments import ACTIVE_ACCESS_STATUS, SchedulingError
+
+
+@dataclass(frozen=True)
+class ReminderPreview:
+    appointment_id: int
+    barber_shop_id: int
+    customer_name: str
+    customer_phone: str
+    starts_at: datetime
+    message: str
+
+
+def get_or_create_bot_settings(session: Session, barber_shop_id: int) -> BotSettings:
+    shop = session.get(BarberShop, barber_shop_id)
+    if shop is None:
+        raise SchedulingError("Barber shop not found", 404)
+
+    settings = session.scalars(
+        select(BotSettings).where(BotSettings.barber_shop_id == barber_shop_id)
+    ).first()
+    if settings is not None:
+        return settings
+
+    settings = BotSettings(barber_shop_id=barber_shop_id)
+    session.add(settings)
+    session.commit()
+    session.refresh(settings)
+    return settings
+
+
+def update_bot_settings(
+    session: Session,
+    *,
+    barber_shop_id: int,
+    bot_enabled: bool,
+    reminders_enabled: bool,
+    reminder_hours_before: int,
+    greeting_message: str,
+    reminder_template: str,
+) -> BotSettings:
+    settings = get_or_create_bot_settings(session, barber_shop_id)
+    settings.bot_enabled = bot_enabled
+    settings.reminders_enabled = reminders_enabled
+    settings.reminder_hours_before = reminder_hours_before
+    settings.greeting_message = greeting_message.strip() or DEFAULT_GREETING_MESSAGE
+    settings.reminder_template = reminder_template.strip() or DEFAULT_REMINDER_TEMPLATE
+    session.commit()
+    session.refresh(settings)
+    return settings
+
+
+def render_reminder_message(appointment: Appointment, template: str) -> str:
+    return template.format(
+        customer_name=appointment.customer.full_name,
+        customer_phone=appointment.customer.phone,
+        shop_name=appointment.barber_shop.name,
+        barber_name=appointment.barber.name,
+        service_name=appointment.service.name,
+        starts_at=appointment.starts_at.strftime("%Y-%m-%d %H:%M"),
+    )
+
+
+def list_pending_reminders(
+    session: Session,
+    *,
+    now: datetime | None = None,
+) -> list[ReminderPreview]:
+    current_time = now or datetime.now(UTC).replace(tzinfo=None)
+    if current_time.tzinfo is not None:
+        current_time = current_time.replace(tzinfo=None)
+
+    appointments = session.scalars(
+        select(Appointment)
+        .join(Appointment.barber_shop)
+        .where(
+            BarberShop.access_status == ACTIVE_ACCESS_STATUS,
+            Appointment.status.in_(
+                (
+                    AppointmentStatus.PENDING.value,
+                    AppointmentStatus.CONFIRMED.value,
+                )
+            ),
+            Appointment.starts_at >= current_time,
+        )
+        .order_by(Appointment.starts_at)
+    ).all()
+
+    previews: list[ReminderPreview] = []
+    for appointment in appointments:
+        settings = get_or_create_bot_settings(session, appointment.barber_shop_id)
+        reminder_window_end = current_time + timedelta(hours=settings.reminder_hours_before)
+        if not settings.bot_enabled or not settings.reminders_enabled:
+            continue
+        if appointment.starts_at > reminder_window_end:
+            continue
+
+        previews.append(
+            ReminderPreview(
+                appointment_id=appointment.id,
+                barber_shop_id=appointment.barber_shop_id,
+                customer_name=appointment.customer.full_name,
+                customer_phone=appointment.customer.phone,
+                starts_at=appointment.starts_at,
+                message=render_reminder_message(appointment, settings.reminder_template),
+            )
+        )
+
+    return previews
+
