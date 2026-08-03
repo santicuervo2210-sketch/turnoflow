@@ -50,6 +50,11 @@ def authenticate_user(session: Session, username: str, password: str) -> User | 
     user = session.scalars(select(User).where(User.username == username)).first()
     if user is None or not user.is_active:
         return None
+    if (
+        user.role == UserRole.BUSINESS_ADMIN.value
+        and (user.barber_shop is None or user.barber_shop.access_status != "active")
+    ):
+        return None
     if not verify_password(password, user.password_hash):
         return None
     return user

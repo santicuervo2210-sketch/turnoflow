@@ -79,6 +79,12 @@
   </nav>
 
   <div class="tf-main">
+    {% if managed_shop %}
+      <div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2 mb-0">
+        <div><strong>Gestionando:</strong> {{ managed_shop.name }}</div>
+        <a class="btn btn-sm btn-outline-primary" href="/owner/shops/manage/clear">Ver todos los negocios</a>
+      </div>
+    {% endif %}
     {% if current_module == "agenda" %}
     <section class="tf-hero" id="agenda">
       <div>

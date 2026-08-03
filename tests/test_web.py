@@ -1316,3 +1316,130 @@ def test_admin_general_hours_apply_monday_to_saturday_and_keep_sunday_closed(cli
     configuration = client.get("/admin?module=configuracion")
     assert "Horario general, lunes a sabado" in configuration.text
     assert "El domingo permanece cerrado" in configuration.text
+
+
+def test_owner_can_manage_one_shop_without_mixing_other_shop_data(client: TestClient) -> None:
+    shop_a_id = client.post("/api/barber-shops", json={"name": "Cliente Alfa"}).json()["id"]
+    shop_b_id = client.post("/api/barber-shops", json={"name": "Cliente Beta"}).json()["id"]
+    client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_a_id, "name": "Servicio Alfa", "duration_minutes": 30, "price": "100"},
+    )
+    client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_b_id, "name": "Servicio Beta", "duration_minutes": 30, "price": "200"},
+    )
+
+    manage_response = client.get(f"/owner/shops/{shop_a_id}/manage", follow_redirects=False)
+    scoped_dashboard = client.get("/admin?module=servicios")
+
+    assert manage_response.status_code == 303
+    assert "Gestionando:" in scoped_dashboard.text
+    assert "Cliente Alfa" in scoped_dashboard.text
+    assert "Servicio Alfa" in scoped_dashboard.text
+    assert "Servicio Beta" not in scoped_dashboard.text
+
+    clear_response = client.get("/owner/shops/manage/clear", follow_redirects=False)
+    full_dashboard = client.get("/admin?module=servicios")
+    assert clear_response.status_code == 303
+    assert "Servicio Alfa" in full_dashboard.text
+    assert "Servicio Beta" in full_dashboard.text
+
+
+def test_owner_user_lifecycle_preserves_business_data(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Cuenta Cliente"}).json()["id"]
+    client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente Conservado", "phone": "555"},
+    )
+    client.post(
+        "/owner/users",
+        data={
+            "username": "cuenta_cliente",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+        follow_redirects=False,
+    )
+
+    active_delete = client.post("/owner/users/1/delete", follow_redirects=False)
+    assert active_delete.headers["location"] == "/owner?notice=user_must_be_inactive"
+
+    deactivate = client.post("/owner/users/1/deactivate", follow_redirects=False)
+    blocked_login = client.post(
+        "/login",
+        data={"username": "cuenta_cliente", "password": "clave-segura", "next_path": "/admin"},
+    )
+    assert deactivate.status_code == 303
+    assert blocked_login.status_code == 401
+
+    activate = client.post("/owner/users/1/activate", follow_redirects=False)
+    valid_login = client.post(
+        "/login",
+        data={"username": "cuenta_cliente", "password": "clave-segura", "next_path": "/admin"},
+        follow_redirects=False,
+    )
+    assert activate.status_code == 303
+    assert valid_login.status_code == 303
+
+    client.post("/owner/users/1/deactivate", follow_redirects=False)
+    deleted = client.post("/owner/users/1/delete", follow_redirects=False)
+    customers = client.get("/api/customers", params={"barber_shop_id": shop_id}).json()
+    assert deleted.headers["location"] == "/owner?notice=user_deleted"
+    assert customers[0]["full_name"] == "Cliente Conservado"
+
+
+def test_suspension_invalidates_existing_business_session(client: TestClient, monkeypatch) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Sesion Suspendida"}).json()["id"]
+    client.post(
+        "/owner/users",
+        data={
+            "username": "suspendido",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+    )
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    login = client.post(
+        "/login",
+        data={"username": "suspendido", "password": "clave-segura", "next_path": "/admin"},
+        follow_redirects=False,
+    )
+    assert login.status_code == 303
+    assert client.get("/admin").status_code == 200
+
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    client.post(f"/admin/barber-shops/{shop_id}/suspend", data={"reason": "Pago vencido"})
+    monkeypatch.setattr(settings, "auth_enabled", True)
+
+    blocked_session = client.get("/admin", follow_redirects=False)
+    blocked_login = client.post(
+        "/login",
+        data={"username": "suspendido", "password": "clave-segura", "next_path": "/admin"},
+    )
+    assert blocked_session.status_code == 303
+    assert blocked_session.headers["location"].startswith("/login")
+    assert blocked_login.status_code == 401
+
+
+def test_owner_password_reset_page_is_ready_to_share(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Clave Cliente"}).json()["id"]
+    client.post(
+        "/owner/users",
+        data={
+            "username": "cambiar_clave",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+    )
+
+    response = client.get("/owner/users/1/password-reset")
+
+    assert response.status_code == 200
+    assert "Cambiar clave de cambiar_clave" in response.text
+    assert "Este enlace vence en una hora" in response.text
+    assert "/password-reset?token=" in response.text
+    assert "Copiar enlace" in response.text

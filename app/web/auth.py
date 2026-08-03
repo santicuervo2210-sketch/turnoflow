@@ -12,6 +12,7 @@ from starlette.responses import RedirectResponse, Response
 from starlette.types import ASGIApp
 
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models import User, UserRole
 
 SESSION_COOKIE_NAME = "turnoflow_session"
@@ -19,6 +20,7 @@ CSRF_COOKIE_NAME = "turnoflow_csrf"
 CSRF_FORM_FIELD = "csrf_token"
 PROTECTED_PATH_PREFIXES = (
     "/admin",
+    "/owner",
     "/api",
     "/bot-simulator",
     "/customer",
@@ -94,6 +96,30 @@ def session_subject_for_env_owner(username: str) -> str:
 def is_owner_session_cookie(cookie_value: str | None) -> bool:
     subject = parse_session_subject(cookie_value)
     return subject is not None and subject.endswith(f":{UserRole.OWNER.value}")
+
+
+def is_active_session_subject(subject: str) -> bool:
+    if subject.startswith("env:"):
+        return subject.endswith(f":{UserRole.OWNER.value}")
+    if not subject.startswith("user:"):
+        return False
+
+    parts = subject.split(":")
+    if len(parts) != 3:
+        return False
+    try:
+        user_id = int(parts[1])
+        signed_role = UserRole(parts[2])
+    except ValueError:
+        return False
+
+    with SessionLocal() as session:
+        user = session.get(User, user_id)
+        if user is None or not user.is_active or user.role != signed_role.value:
+            return False
+        if signed_role == UserRole.BUSINESS_ADMIN:
+            return user.barber_shop is not None and user.barber_shop.access_status == "active"
+        return signed_role == UserRole.OWNER
 
 
 def validate_admin_credentials(username: str, password: str) -> bool:
@@ -177,7 +203,8 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         cookie_value = request.cookies.get(SESSION_COOKIE_NAME)
-        if is_valid_session_cookie(cookie_value):
+        subject = parse_session_subject(cookie_value)
+        if subject is not None and is_active_session_subject(subject):
             if (path.startswith("/api") or path in {"/docs", "/redoc", "/openapi.json"}) and not is_owner_session_cookie(
                 cookie_value
             ):
@@ -190,6 +217,10 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         if path.startswith("/api") or path in {"/openapi.json"}:
-            return Response("No autorizado.", status_code=HTTPStatus.UNAUTHORIZED)
+            response = Response("No autorizado.", status_code=HTTPStatus.UNAUTHORIZED)
+            clear_session_cookie(response)
+            return response
 
-        return RedirectResponse(f"/login?next={path}", status_code=HTTPStatus.SEE_OTHER)
+        response = RedirectResponse(f"/login?next={path}", status_code=HTTPStatus.SEE_OTHER)
+        clear_session_cookie(response)
+        return response

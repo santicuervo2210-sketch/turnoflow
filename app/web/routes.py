@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from http import HTTPStatus
+import hashlib
 import hmac
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -66,6 +67,7 @@ BOT_SIMULATOR_CONTEXTS: dict[tuple[int, str], BotConversationContext] = {}
 BOT_SIMULATOR_FROM_PHONE = "+5491100000000"
 WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
 ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
+OWNER_MANAGED_SHOP_COOKIE = "turnoflow_owner_shop"
 
 
 def _redirect_to(path: str) -> RedirectResponse:
@@ -115,11 +117,42 @@ def _current_user(request: Request, session: Session) -> User | None:
     return user
 
 
+def _managed_shop_cookie_value(barber_shop_id: int) -> str:
+    payload = str(barber_shop_id)
+    signature = hmac.new(
+        settings.session_secret.encode("utf-8"),
+        f"owner-shop:{payload}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"{payload}:{signature}"
+
+
+def _managed_shop_id(request: Request, session: Session) -> int | None:
+    value = request.cookies.get(OWNER_MANAGED_SHOP_COOKIE)
+    if not value or ":" not in value:
+        return None
+    shop_id_text, signature = value.rsplit(":", 1)
+    expected_signature = hmac.new(
+        settings.session_secret.encode("utf-8"),
+        f"owner-shop:{shop_id_text}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(signature, expected_signature):
+        return None
+    try:
+        shop_id = int(shop_id_text)
+    except ValueError:
+        return None
+    return shop_id if session.get(BarberShop, shop_id) is not None else None
+
+
 def _current_shop_id(request: Request, session: Session) -> int | None:
     user = _current_user(request, session)
-    if user is None or user.role == UserRole.OWNER.value:
-        return None
-    return user.barber_shop_id
+    if user is not None and user.role == UserRole.BUSINESS_ADMIN.value:
+        return user.barber_shop_id
+    if _is_owner_request(request, session):
+        return _managed_shop_id(request, session)
+    return None
 
 
 def _is_owner_request(request: Request, session: Session) -> bool:
@@ -358,6 +391,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "selected_module": _admin_module_param(request),
         "current_user": _current_user(request, session),
         "is_owner_view": _is_owner_request(request, session) or not settings.auth_enabled,
+        "managed_shop": shops[0] if shop_id is not None and shops and _is_owner_request(request, session) else None,
         "stats": {
             "shops": len(shops),
             "active_shops": len([shop for shop in shops if shop.access_status == "active"]),
@@ -692,6 +726,12 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
     if redirect is not None:
         return redirect
 
+    notice_messages = {
+        "user_deactivated": "Acceso desactivado. La sesion del usuario deja de ser valida inmediatamente.",
+        "user_activated": "Acceso reactivado.",
+        "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
+        "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
+    }
     return _panel_template_response(
         request,
         "owner/index.html",
@@ -701,6 +741,7 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
             "users": list(session.scalars(select(User).order_by(User.id)).all()),
             "current_user": _current_user(request, session),
             "is_owner_view": True,
+            "notice": notice_messages.get(request.query_params.get("notice", "")),
         },
     )
 
@@ -759,6 +800,103 @@ def owner_create_password_reset_link(
 
     token = create_password_reset_token(user)
     return {"reset_url": f"/password-reset?token={token}"}
+
+
+@router.get("/owner/users/{user_id}/password-reset")
+def owner_password_reset_page(
+    request: Request,
+    user_id: int,
+    session: Session = Depends(get_db),
+):
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    user = session.get(User, user_id)
+    if user is None:
+        return _redirect_to("/owner")
+    token = create_password_reset_token(user)
+    reset_path = f"/password-reset?token={token}"
+    return _panel_template_response(
+        request,
+        "owner/password_reset_link.html",
+        {
+            "request": request,
+            "user": user,
+            "reset_url": f"{str(request.base_url).rstrip('/')}{reset_path}",
+        },
+    )
+
+
+@router.post("/owner/users/{user_id}/deactivate")
+def owner_deactivate_user(request: Request, user_id: int, session: Session = Depends(get_db)) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    user = session.get(User, user_id)
+    if user is not None and user.role == UserRole.BUSINESS_ADMIN.value:
+        user.is_active = False
+        session.commit()
+    return _redirect_to("/owner?notice=user_deactivated")
+
+
+@router.post("/owner/users/{user_id}/activate")
+def owner_activate_user(request: Request, user_id: int, session: Session = Depends(get_db)) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    user = session.get(User, user_id)
+    if user is not None and user.role == UserRole.BUSINESS_ADMIN.value:
+        user.is_active = True
+        session.commit()
+    return _redirect_to("/owner?notice=user_activated")
+
+
+@router.post("/owner/users/{user_id}/delete")
+def owner_delete_user(request: Request, user_id: int, session: Session = Depends(get_db)) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    user = session.get(User, user_id)
+    if user is None or user.role != UserRole.BUSINESS_ADMIN.value:
+        return _redirect_to("/owner")
+    if user.is_active:
+        return _redirect_to("/owner?notice=user_must_be_inactive")
+    session.delete(user)
+    session.commit()
+    return _redirect_to("/owner?notice=user_deleted")
+
+
+@router.get("/owner/shops/{barber_shop_id}/manage")
+def owner_manage_shop(
+    request: Request,
+    barber_shop_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    if session.get(BarberShop, barber_shop_id) is None:
+        return _redirect_to("/owner")
+    response = _redirect_to("/admin")
+    response.set_cookie(
+        OWNER_MANAGED_SHOP_COOKIE,
+        _managed_shop_cookie_value(barber_shop_id),
+        httponly=True,
+        secure=settings.environment == "production",
+        samesite="lax",
+        max_age=60 * 60 * 4,
+    )
+    return response
+
+
+@router.get("/owner/shops/manage/clear")
+def owner_clear_managed_shop(request: Request, session: Session = Depends(get_db)) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    response = _redirect_to("/admin")
+    response.delete_cookie(OWNER_MANAGED_SHOP_COOKIE)
+    return response
 
 
 @router.post("/admin/barber-shops")

@@ -2,6 +2,7 @@
 
 {% block content %}
 <div class="admin-shell">
+  {% if notice %}<div class="alert alert-info mb-0">{{ notice }}</div>{% endif %}
   <section class="page-head d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
       <span class="stat-label">Owner</span>
@@ -50,16 +51,22 @@
             </div>
           </div>
           {% if shop.access_status == "active" %}
-            <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="inline-action">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <input class="form-control form-control-sm" name="reason" placeholder="Motivo">
-              <button class="btn btn-sm btn-outline-danger" type="submit">Suspender</button>
-            </form>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+              <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Configurar negocio</a>
+              <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="inline-action">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input class="form-control form-control-sm" name="reason" placeholder="Ej: pago vencido">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Suspender acceso</button>
+              </form>
+            </div>
           {% else %}
-            <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <button class="btn btn-sm btn-outline-success" type="submit">Activar</button>
-            </form>
+            <div class="d-flex flex-wrap gap-2">
+              <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Revisar configuracion</a>
+              <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-outline-success" type="submit">Reactivar acceso</button>
+              </form>
+            </div>
           {% endif %}
         </div>
       {% else %}
@@ -76,7 +83,7 @@
     <h2 class="h5">Usuarios</h2>
     <div class="table-responsive">
       <table class="table table-sm align-middle mobile-stack-table">
-        <thead><tr><th>Usuario</th><th>Rol</th><th>Negocio</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Usuario</th><th>Rol</th><th>Negocio</th><th>Estado</th><th>Acciones</th></tr></thead>
         <tbody>
           {% for user in users %}
             <tr>
@@ -84,9 +91,29 @@
               <td data-label="Rol">{{ user.role }}</td>
               <td data-label="Negocio">{% if user.barber_shop %}{{ user.barber_shop.name }}{% else %}TurnoFlow owner{% endif %}</td>
               <td data-label="Estado">{% if user.is_active %}activo{% else %}inactivo{% endif %}</td>
+              <td data-label="Acciones">
+                <div class="d-flex flex-wrap gap-2">
+                  <a class="btn btn-sm btn-outline-secondary" href="/owner/users/{{ user.id }}/password-reset">Cambiar clave</a>
+                  {% if user.role == "business_admin" and user.is_active %}
+                    <form action="/owner/users/{{ user.id }}/deactivate" method="post">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-outline-warning" type="submit">Desactivar</button>
+                    </form>
+                  {% elif user.role == "business_admin" %}
+                    <form action="/owner/users/{{ user.id }}/activate" method="post">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-outline-success" type="submit">Reactivar</button>
+                    </form>
+                    <form action="/owner/users/{{ user.id }}/delete" method="post" onsubmit="return confirm('Eliminar solo esta cuenta de acceso? Los datos del negocio se conservaran.');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Eliminar cuenta</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
             </tr>
           {% else %}
-            <tr><td class="text-secondary">Sin usuarios creados.</td></tr>
+            <tr><td class="text-secondary" colspan="5">Sin usuarios creados.</td></tr>
           {% endfor %}
         </tbody>
       </table>

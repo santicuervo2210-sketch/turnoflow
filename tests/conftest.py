@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
+import app.web.auth as web_auth
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -37,11 +38,14 @@ def client() -> Generator[TestClient, None, None]:
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    original_auth_session_local = web_auth.SessionLocal
+    web_auth.SessionLocal = testing_session_local
 
     with TestClient(app) as test_client:
         yield test_client
 
     app.dependency_overrides.clear()
+    web_auth.SessionLocal = original_auth_session_local
 
 
 @pytest.fixture()
