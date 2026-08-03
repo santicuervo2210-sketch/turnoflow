@@ -962,6 +962,67 @@ textarea {
   grid-column: 1 / -1;
 }
 
+.tf-list-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tf-list-table th {
+  white-space: nowrap;
+}
+
+.tf-detail-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.tf-detail-card {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--tf-line);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.tf-detail-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.tf-detail-form label {
+  color: var(--tf-muted);
+  display: grid;
+  font-size: 0.82rem;
+  font-weight: 700;
+  gap: 0.35rem;
+}
+
+.tf-detail-history {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.tf-detail-history-row {
+  align-items: center;
+  border-top: 1px solid var(--tf-line);
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-top: 0.65rem;
+}
+
+.tf-detail-history-row strong,
+.tf-detail-history-row span {
+  display: block;
+}
+
+.tf-detail-history-row span:not(.badge) {
+  color: var(--tf-muted);
+  font-size: 0.85rem;
+}
+
 .tf-mini-section {
   padding: 0.85rem;
 }
@@ -1278,7 +1339,8 @@ textarea {
   }
 
   .tf-card-grid,
-  .tf-filter-bar {
+  .tf-filter-bar,
+  .tf-detail-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -1330,6 +1392,46 @@ textarea {
   .tf-compact-row,
   .tf-edit-grid {
     grid-template-columns: 1fr;
+  }
+
+  .tf-list-table thead {
+    display: none;
+  }
+
+  .tf-list-table,
+  .tf-list-table tbody,
+  .tf-list-table tr,
+  .tf-list-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .tf-list-table tr {
+    border-bottom: 1px solid var(--tf-line);
+    padding-block: 0.65rem;
+  }
+
+  .tf-list-table td {
+    border: 0;
+    padding: 0.2rem 0;
+    text-align: left !important;
+  }
+
+  .tf-list-table td::before {
+    color: var(--tf-muted);
+    content: attr(data-label) ": ";
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .tf-list-table td:last-child::before {
+    content: "";
+  }
+
+  .tf-detail-history-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .tf-appointment-actions {

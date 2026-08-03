@@ -976,7 +976,38 @@ def admin_create_customer(
                 notes=notes or None,
             ),
         )
-    return _redirect_to("/admin")
+    return _redirect_to("/admin?module=clientes")
+
+
+@router.get("/admin/customers/{customer_id}")
+def admin_customer_detail(
+    request: Request,
+    customer_id: int,
+    session: Session = Depends(get_db),
+):
+    customer = session.get(Customer, customer_id)
+    if customer is None or not _shop_allowed(request, session, customer.barber_shop_id):
+        return _redirect_to("/admin?module=clientes")
+
+    customer_appointments = list(
+        session.scalars(
+            select(Appointment)
+            .where(Appointment.customer_id == customer.id)
+            .order_by(Appointment.starts_at.desc())
+        ).all()
+    )
+    return _panel_template_response(
+        request,
+        "admin/index.html",
+        _dashboard_context(
+            request,
+            session,
+            shop_id=_current_shop_id(request, session),
+            selected_module="clientes",
+            customer_detail=customer,
+            customer_appointments=customer_appointments,
+        ),
+    )
 
 
 @router.post("/admin/customers/{customer_id}/edit")
@@ -1003,7 +1034,51 @@ def admin_edit_customer(
     customer.email = email or None
     customer.notes = notes or None
     session.commit()
-    return _redirect_to("/admin")
+    return _redirect_to(f"/admin/customers/{customer.id}")
+
+
+@router.post("/admin/customers/{customer_id}/delete")
+def admin_delete_customer(
+    request: Request,
+    customer_id: int,
+    session: Session = Depends(get_db),
+):
+    customer = session.get(Customer, customer_id)
+    if customer is None:
+        return _redirect_to("/admin?module=clientes")
+    redirect = _redirect_if_shop_not_allowed(request, session, customer.barber_shop_id)
+    if redirect is not None:
+        return redirect
+
+    appointment_ids = list(
+        session.scalars(select(Appointment.id).where(Appointment.customer_id == customer.id)).all()
+    )
+    if appointment_ids:
+        customer_appointments = list(
+            session.scalars(
+                select(Appointment)
+                .where(Appointment.customer_id == customer.id)
+                .order_by(Appointment.starts_at.desc())
+            ).all()
+        )
+        return _panel_template_response(
+            request,
+            "admin/index.html",
+            _dashboard_context(
+                request,
+                session,
+                shop_id=_current_shop_id(request, session),
+                selected_module="clientes",
+                customer_detail=customer,
+                customer_appointments=customer_appointments,
+                error="No se puede eliminar este cliente porque tiene turnos asociados. El historial debe conservarse.",
+            ),
+            status_code=HTTPStatus.CONFLICT,
+        )
+
+    session.delete(customer)
+    session.commit()
+    return _redirect_to("/admin?module=clientes")
 
 
 @router.post("/admin/working-schedules")

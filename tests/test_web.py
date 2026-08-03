@@ -502,6 +502,45 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
     assert cancel_response.status_code == 200
     assert "$0 cancelado" in cancel_response.text
 
+    delete_response = client.post(f"/admin/customers/{customer_id}/delete")
+    assert delete_response.status_code == 409
+    assert "historial debe conservarse" in delete_response.text
+
+
+def test_admin_customer_module_is_a_list_with_separate_detail_and_delete(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Clientes Demo"}).json()["id"]
+    customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Martina", "phone": "223577490", "notes": "Vecina"},
+    ).json()["id"]
+
+    list_response = client.get("/admin?module=clientes")
+    assert list_response.status_code == 200
+    assert "Martina" in list_response.text
+    assert f"/admin/customers/{customer_id}" in list_response.text
+    assert 'value="Martina"' not in list_response.text
+    assert "Guardar cambios" not in list_response.text
+
+    detail_response = client.get(f"/admin/customers/{customer_id}")
+    assert detail_response.status_code == 200
+    assert 'value="Martina"' in detail_response.text
+    assert "Guardar cambios" in detail_response.text
+    assert "Eliminar cliente" in detail_response.text
+
+    edit_response = client.post(
+        f"/admin/customers/{customer_id}/edit",
+        data={"full_name": "Martina Lopez", "phone": "223577491", "email": "", "notes": "VIP"},
+        follow_redirects=False,
+    )
+    assert edit_response.status_code == 303
+    assert edit_response.headers["location"] == f"/admin/customers/{customer_id}"
+    assert client.get(f"/admin/customers/{customer_id}").status_code == 200
+    assert "Martina Lopez" in client.get(f"/admin/customers/{customer_id}").text
+
+    delete_response = client.post(f"/admin/customers/{customer_id}/delete", follow_redirects=False)
+    assert delete_response.status_code == 303
+    assert client.get("/api/customers", params={"barber_shop_id": shop_id}).json() == []
+
 
 def test_admin_can_create_appointment_with_new_customer_inline(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Inline Customer Demo"})
