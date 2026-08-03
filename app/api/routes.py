@@ -50,7 +50,13 @@ router = APIRouter(prefix="/api")
 def _get_or_404(session: Session, model: type, object_id: int, label: str):
     item = session.get(model, object_id)
     if item is None:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"{label} not found")
+        labels = {
+            "Barber shop": "Negocio",
+            "Barber": "Profesional",
+            "Service": "Servicio",
+            "Customer": "Cliente",
+        }
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=f"{labels.get(label, label)} no encontrado.")
     return item
 
 
@@ -149,9 +155,9 @@ def create_barber(payload: BarberCreate, session: Session = Depends(get_db)) -> 
     if payload.service_ids:
         services = session.scalars(select(Service).where(Service.id.in_(payload.service_ids))).all()
         if len(services) != len(set(payload.service_ids)):
-            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Invalid service_ids")
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="La lista de servicios no es valida.")
         if any(service.barber_shop_id != payload.barber_shop_id for service in services):
-            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Services must belong to barber shop")
+            raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Los servicios deben pertenecer al negocio.")
         barber.services = list(services)
 
     return _save(session, barber)
@@ -177,7 +183,7 @@ def assign_service_to_barber(
     barber = _get_or_404(session, Barber, barber_id, "Barber")
     service = _get_or_404(session, Service, service_id, "Service")
     if barber.barber_shop_id != service.barber_shop_id:
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Service must belong to barber shop")
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="El servicio debe pertenecer al negocio.")
     if service not in barber.services:
         barber.services.append(service)
     return _save(session, barber)

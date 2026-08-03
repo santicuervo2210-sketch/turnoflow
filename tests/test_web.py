@@ -533,7 +533,7 @@ def test_admin_manual_booking_accepts_any_shop_service_for_the_only_professional
     )
 
     dashboard = client.get("/admin")
-    assert f'data-solo="true"' in dashboard.text
+    assert f'data-all-services="true"' in dashboard.text
     assert "filterBarbersByService" in dashboard.text
 
     response = client.post(
@@ -554,6 +554,75 @@ def test_admin_manual_booking_accepts_any_shop_service_for_the_only_professional
     appointments = client.get("/api/appointments").json()
     assert len(appointments) == 1
     assert appointments[0]["status"] == "confirmed"
+
+
+def test_professional_without_specialties_can_book_any_service_in_multi_professional_shop(
+    client: TestClient,
+) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Salon Flexible"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Color", "duration_minutes": 90, "price": "30000.00"},
+    ).json()["id"]
+    flexible_barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Ana", "service_ids": []},
+    ).json()["id"]
+    client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Mica", "service_ids": [service_id]},
+    )
+    client.post(
+        "/api/working-schedules",
+        json={
+            "barber_id": flexible_barber_id,
+            "day_of_week": 5,
+            "start_time": "09:00:00",
+            "end_time": "18:00:00",
+        },
+    )
+
+    response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(flexible_barber_id),
+            "customer_id": "",
+            "new_customer_name": "Cliente Salon",
+            "service_id": str(service_id),
+            "starts_at": "2026-08-08T10:00",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert client.get("/api/appointments").json()[0]["barber_id"] == flexible_barber_id
+
+
+def test_admin_can_assign_multiple_specialties_to_professional(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Estudio Multiple"}).json()["id"]
+    nails_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Unas", "duration_minutes": 60, "price": "15000.00"},
+    ).json()["id"]
+    lashes_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Pestanas", "duration_minutes": 90, "price": "22000.00"},
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Mica", "service_ids": []},
+    ).json()["id"]
+
+    response = client.post(
+        f"/admin/barbers/{barber_id}/edit",
+        data={"name": "Mica", "phone": "", "email": "", "service_ids": [str(nails_id), str(lashes_id)]},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    dashboard = client.get("/admin?module=equipo")
+    assert f'name="service_ids" value="{nails_id}" checked' in dashboard.text
+    assert f'name="service_ids" value="{lashes_id}" checked' in dashboard.text
 
 
 def test_admin_manual_booking_rejects_incompatible_professional_in_spanish(client: TestClient) -> None:
@@ -1222,3 +1291,28 @@ def test_admin_cancel_shows_released_slot_notice(client: TestClient) -> None:
     assert response.status_code == 200
     assert "Se libero el turno" in response.text
     assert "Mensaje simulado" in response.text
+
+
+def test_admin_general_hours_apply_monday_to_saturday_and_keep_sunday_closed(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Spa Horarios"}).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Julia", "service_ids": []},
+    ).json()["id"]
+
+    response = client.post(
+        f"/admin/barber-shops/{shop_id}/hours",
+        data={"opening_time": "10:00", "closing_time": "19:00"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    schedules = client.get("/api/working-schedules", params={"barber_id": barber_id}).json()
+    active_schedules = [schedule for schedule in schedules if schedule["is_active"]]
+    assert {schedule["day_of_week"] for schedule in active_schedules} == set(range(6))
+    assert all(schedule["start_time"] == "10:00:00" for schedule in active_schedules)
+    assert all(schedule["end_time"] == "19:00:00" for schedule in active_schedules)
+
+    configuration = client.get("/admin?module=configuracion")
+    assert "Horario general, lunes a sabado" in configuration.text
+    assert "El domingo permanece cerrado" in configuration.text

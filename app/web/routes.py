@@ -27,9 +27,13 @@ from app.models import (
     WorkingSchedule,
 )
 from app.services.appointments import (
+    BUSINESS_WEEKDAYS,
+    DEFAULT_CLOSING_TIME,
+    DEFAULT_OPENING_TIME,
     SchedulingError,
     activate_barber_shop,
     barber_can_perform_service,
+    business_hours_for_shop,
     cancel_appointment,
     create_appointment,
     get_available_slots,
@@ -293,13 +297,6 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     services = list(session.scalars(_shop_filter(select(Service).order_by(Service.id), shop_id, Service)).all())
     barbers = list(session.scalars(_shop_filter(select(Barber).order_by(Barber.id), shop_id, Barber)).all())
     customers = list(session.scalars(_shop_filter(select(Customer).order_by(Customer.id), shop_id, Customer)).all())
-    active_barber_counts: dict[int, int] = {}
-    for barber in barbers:
-        if barber.is_active:
-            active_barber_counts[barber.barber_shop_id] = active_barber_counts.get(barber.barber_shop_id, 0) + 1
-    single_barber_shop_ids = {
-        barber_shop_id for barber_shop_id, count in active_barber_counts.items() if count == 1
-    }
     context = {
         "request": request,
         "now": now,
@@ -307,15 +304,18 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "services": services,
         "barbers": barbers,
         "customers": customers,
-        "single_barber_shop_ids": single_barber_shop_ids,
+        "general_hours_by_shop": {
+            shop.id: business_hours_for_shop(session, shop.id) for shop in shops
+        },
+        "weekday_labels": ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"),
         "schedules": list(
             session.scalars(
                 select(WorkingSchedule)
                 .join(WorkingSchedule.barber)
-                .where(Barber.barber_shop_id == shop_id)
+                .where(Barber.barber_shop_id == shop_id, WorkingSchedule.is_active.is_(True))
                 .order_by(WorkingSchedule.id)
                 if shop_id is not None
-                else select(WorkingSchedule).order_by(WorkingSchedule.id)
+                else select(WorkingSchedule).where(WorkingSchedule.is_active.is_(True)).order_by(WorkingSchedule.id)
             ).all()
         ),
         "time_blocks": list(
@@ -459,18 +459,11 @@ def _bot_quick_actions(
         ).first()
     if service is None:
         actions = [
-            {"label": "Sacar turno", "message": "quiero un turno"},
-            {"label": "Precios", "message": "cuanto sale"},
+            {"label": "Sacar turno", "message": "2"},
+            {"label": "Servicios y precios", "message": "1"},
+            {"label": "Mi turno", "message": "3"},
+            {"label": "Cancelar o mover", "message": "4"},
         ]
-        if barber_shop_id is not None:
-            actions.extend(
-                {"label": service.name, "message": f"quiero {service.name}"}
-                for service in session.scalars(
-                    select(Service)
-                    .where(Service.barber_shop_id == barber_shop_id, Service.is_active.is_(True))
-                    .order_by(Service.id)
-                ).all()
-            )
         return actions[:8]
 
     barber = _first_barber_for_service(session, service)
@@ -496,6 +489,7 @@ def _bot_quick_actions(
                 for slot in slots[:8]
             ]
             actions.append({"label": "Otro dia", "message": "que dias tenes disponibles"})
+            actions.append({"label": "Volver", "message": "0"})
             return actions
 
     actions: list[dict[str, str]] = [
@@ -522,7 +516,8 @@ def _bot_quick_actions(
         if len(actions) >= 6:
             break
 
-    actions.append({"label": "Cambiar servicio", "message": "servicios"})
+    actions.append({"label": "Cambiar servicio", "message": "2"})
+    actions.append({"label": "Volver", "message": "0"})
     return actions
 
 
@@ -622,7 +617,7 @@ def login_submit(
         f"login:{_client_host(request)}",
         settings.login_rate_limit_per_minute,
     ):
-        raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Too many login attempts")
+        raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Demasiados intentos de inicio de sesion.")
 
     if validate_admin_credentials(username, password):
         response = _redirect_to(_safe_next_path(next_path))
@@ -756,11 +751,11 @@ def owner_create_password_reset_link(
 ) -> dict:
     redirect = _redirect_if_not_owner(request, session)
     if redirect is not None:
-        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail="Owner access required")
+        raise HTTPException(status_code=HTTPStatus.FORBIDDEN, detail="Se requiere acceso de superadministrador.")
 
     user = session.get(User, user_id)
     if user is None:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Usuario no encontrado.")
 
     token = create_password_reset_token(user)
     return {"reset_url": f"/password-reset?token={token}"}
@@ -791,13 +786,20 @@ def admin_create_barber_shop(
         address=address.strip() if address else None,
     )
     if clean_main_barber_name:
-        shop.barbers.append(
-            Barber(
-                name=clean_main_barber_name,
-                phone=main_barber_phone.strip() if main_barber_phone else None,
-                email=main_barber_email.strip() if main_barber_email else None,
-            )
+        main_barber = Barber(
+            name=clean_main_barber_name,
+            phone=main_barber_phone.strip() if main_barber_phone else None,
+            email=main_barber_email.strip() if main_barber_email else None,
         )
+        main_barber.working_schedules = [
+            WorkingSchedule(
+                day_of_week=day_of_week,
+                start_time=DEFAULT_OPENING_TIME,
+                end_time=DEFAULT_CLOSING_TIME,
+            )
+            for day_of_week in BUSINESS_WEEKDAYS
+        ]
+        shop.barbers.append(main_barber)
     _save(session, shop)
     return _redirect_to(_safe_next_path(next_path))
 
@@ -823,6 +825,67 @@ def admin_activate_barber_shop(request: Request, barber_shop_id: int, session: S
         return redirect
     activate_barber_shop(session, barber_shop_id)
     return _redirect_to("/admin")
+
+
+@router.post("/admin/barber-shops/{barber_shop_id}/hours")
+def admin_update_business_hours(
+    request: Request,
+    barber_shop_id: int,
+    opening_time: time = Form(...),
+    closing_time: time = Form(...),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    if opening_time >= closing_time:
+        return _admin_error_response(
+            request,
+            session,
+            "La hora de apertura debe ser anterior a la de cierre.",
+            selected_module="configuracion",
+        )
+
+    barbers = list(
+        session.scalars(
+            select(Barber).where(
+                Barber.barber_shop_id == barber_shop_id,
+                Barber.is_active.is_(True),
+            )
+        ).all()
+    )
+    for barber in barbers:
+        schedules = list(
+            session.scalars(
+                select(WorkingSchedule).where(WorkingSchedule.barber_id == barber.id)
+            ).all()
+        )
+        for schedule in schedules:
+            schedule.is_active = False
+        for day_of_week in BUSINESS_WEEKDAYS:
+            matching_schedule = next(
+                (
+                    schedule
+                    for schedule in schedules
+                    if schedule.day_of_week == day_of_week
+                    and schedule.start_time == opening_time
+                    and schedule.end_time == closing_time
+                ),
+                None,
+            )
+            if matching_schedule is None:
+                session.add(
+                    WorkingSchedule(
+                        barber_id=barber.id,
+                        day_of_week=day_of_week,
+                        start_time=opening_time,
+                        end_time=closing_time,
+                    )
+                )
+            else:
+                matching_schedule.is_active = True
+    session.commit()
+    return _redirect_to("/admin?module=configuracion")
 
 
 @router.post("/admin/services")
@@ -892,7 +955,7 @@ def admin_create_barber(
     name: str = Form(...),
     phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
-    service_id: int | None = Form(default=None),
+    service_ids: list[int] = Form(default=[]),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
@@ -907,10 +970,27 @@ def admin_create_barber(
         phone=phone or None,
         email=email or None,
     )
-    if service_id is not None:
-        service = session.get(Service, service_id)
-        if service is not None and service.barber_shop_id == barber_shop_id:
-            barber.services.append(service)
+    opening_time, closing_time = business_hours_for_shop(session, barber_shop_id)
+    barber.working_schedules = [
+        WorkingSchedule(
+            day_of_week=day_of_week,
+            start_time=opening_time,
+            end_time=closing_time,
+        )
+        for day_of_week in BUSINESS_WEEKDAYS
+    ]
+    if service_ids:
+        services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all())
+        if len(services) != len(set(service_ids)) or any(
+            service.barber_shop_id != barber_shop_id for service in services
+        ):
+            return _admin_error_response(
+                request,
+                session,
+                "Una de las especialidades seleccionadas no pertenece al negocio.",
+                selected_module="equipo",
+            )
+        barber.services = services
     _save(session, barber)
     return _redirect_to("/admin")
 
@@ -922,7 +1002,7 @@ def admin_edit_barber(
     name: str = Form(...),
     phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
-    service_id: str = Form(default=""),
+    service_ids: list[int] = Form(default=[]),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     barber = session.get(Barber, barber_id)
@@ -937,14 +1017,17 @@ def admin_edit_barber(
     barber.name = name
     barber.phone = phone or None
     barber.email = email or None
-    if service_id.strip():
-        try:
-            parsed_service_id = int(service_id)
-        except ValueError:
-            return _admin_error_response(request, session, "Servicio invalido.", selected_module="equipo")
-        service = session.get(Service, parsed_service_id)
-        if service is not None and service.barber_shop_id == barber.barber_shop_id:
-            barber.services = [service]
+    services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all()) if service_ids else []
+    if len(services) != len(set(service_ids)) or any(
+        service.barber_shop_id != barber.barber_shop_id for service in services
+    ):
+        return _admin_error_response(
+            request,
+            session,
+            "Una de las especialidades seleccionadas no pertenece al negocio.",
+            selected_module="equipo",
+        )
+    barber.services = services
     session.commit()
     return _redirect_to("/admin")
 
@@ -1106,7 +1189,7 @@ def admin_create_working_schedule(
     if redirect is not None:
         return redirect
 
-    if day_of_week < 0 or day_of_week > 6 or start_time >= end_time:
+    if day_of_week < 0 or day_of_week > 5 or start_time >= end_time:
         return _panel_template_response(
             request,
             "admin/index.html",
@@ -1168,7 +1251,7 @@ def admin_edit_working_schedule(
     if redirect is not None:
         return redirect
 
-    if day_of_week < 0 or day_of_week > 6 or start_time >= end_time:
+    if day_of_week < 0 or day_of_week > 5 or start_time >= end_time:
         return _admin_error_response(
             request,
             session,
@@ -1267,6 +1350,7 @@ def admin_create_appointment(
     new_customer_phone: str | None = Form(default=None),
     service_id: int = Form(...),
     starts_at: datetime = Form(...),
+    duration_minutes: int | None = Form(default=None),
     notes: str | None = Form(default=None),
     session: Session = Depends(get_db),
 ):
@@ -1318,6 +1402,7 @@ def admin_create_appointment(
             customer_id=parsed_customer_id,
             service_id=service_id,
             starts_at=starts_at,
+            duration_minutes=duration_minutes,
             notes=notes or None,
         )
         update_appointment_status(session, appointment.id, AppointmentStatus.CONFIRMED)
@@ -1784,16 +1869,16 @@ def bot_webhook(
 ) -> dict:
     configured_secret = str(settings.bot_webhook_secret or "")
     if not configured_secret:
-        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="Webhook is not configured")
+        raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="El webhook no esta configurado.")
     provided_secret = request.headers.get("X-TurnoFlow-Webhook-Secret") or ""
     if not hmac.compare_digest(provided_secret.encode("utf-8"), configured_secret.encode("utf-8")):
-        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid webhook secret")
+        raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="La clave del webhook no es valida.")
     business_number = payload.to_business_number.strip()
     if is_rate_limited(
         f"bot-webhook:{_client_host(request)}",
         settings.bot_webhook_rate_limit_per_minute,
     ):
-        raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Too many bot messages")
+        raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Demasiados mensajes enviados al bot.")
 
     shop = session.scalars(
         select(BarberShop).where(
@@ -1802,7 +1887,7 @@ def bot_webhook(
         )
     ).first()
     if shop is None:
-        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Business number is not configured")
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="El numero del negocio no esta configurado.")
 
     context = _bot_context_for(shop.id, payload.from_phone)
     messages = process_bot_message(

@@ -207,3 +207,79 @@ def test_suspended_shop_cannot_create_appointments(client: TestClient) -> None:
     activate_response = client.post(f"/api/barber-shops/{shop_id}/activate")
     assert activate_response.status_code == 200
     assert activate_response.json()["access_status"] == "active"
+
+
+def test_default_business_hours_allow_monday_to_saturday_and_close_sunday(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Horario Simple"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Masaje", "duration_minutes": 60, "price": "18000.00"},
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Sol", "service_ids": []},
+    ).json()["id"]
+    customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente", "phone": "100"},
+    ).json()["id"]
+
+    saturday = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-08T10:00:00",
+        },
+    )
+    sunday = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-09T10:00:00",
+        },
+    )
+
+    assert saturday.status_code == 201
+    assert sunday.status_code == 400
+    assert sunday.json()["detail"] == "El negocio no toma turnos los domingos."
+
+
+def test_custom_appointment_duration_is_saved_and_preserved_when_rescheduled(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Tattoo Demo"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Tatuaje", "duration_minutes": 120, "price": "50000.00"},
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Diego", "service_ids": []},
+    ).json()["id"]
+    customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente Tattoo", "phone": "200"},
+    ).json()["id"]
+
+    created = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-08T10:00:00",
+            "duration_minutes": 180,
+        },
+    )
+    appointment_id = created.json()["id"]
+    rescheduled = client.post(
+        f"/api/appointments/{appointment_id}/reschedule",
+        json={"starts_at": "2026-08-15T11:00:00"},
+    )
+
+    assert created.status_code == 201
+    assert created.json()["ends_at"] == "2026-08-08T13:00:00"
+    assert rescheduled.status_code == 200
+    assert rescheduled.json()["ends_at"] == "2026-08-15T14:00:00"

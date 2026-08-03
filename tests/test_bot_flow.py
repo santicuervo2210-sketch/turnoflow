@@ -282,7 +282,7 @@ def test_bot_webhook_rejects_unknown_business_number(client: TestClient) -> None
     )
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Business number is not configured"
+    assert response.json()["detail"] == "El numero del negocio no esta configurado."
 
 
 def test_bot_webhook_fails_closed_when_secret_is_missing(client: TestClient, monkeypatch) -> None:
@@ -297,7 +297,49 @@ def test_bot_webhook_fails_closed_when_secret_is_missing(client: TestClient, mon
     )
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "Webhook is not configured"
+    assert response.json()["detail"] == "El webhook no esta configurado."
+
+
+def test_bot_menu_uses_configured_greeting_and_guides_numeric_booking(client: TestClient) -> None:
+    _create_full_bot_demo_data(client)
+    shop_id = client.get("/api/barber-shops").json()[0]["id"]
+    client.put(
+        f"/api/barber-shops/{shop_id}/bot-settings",
+        json={
+            "bot_enabled": True,
+            "reminders_enabled": False,
+            "reminder_hours_before": 24,
+            "greeting_message": "Hola, somos Estudio Brillo.",
+            "reminder_template": "Recordatorio de turno",
+        },
+    )
+    client.post("/bot-simulator/reset")
+
+    greeting = client.post("/bot-simulator/message", data={"message": "hola"})
+    booking_menu = client.post("/bot-simulator/message", data={"message": "2"})
+    service_selection = client.post("/bot-simulator/message", data={"message": "1"})
+    day_selection = client.post("/bot-simulator/message", data={"message": "2026-08-01"})
+    confirmation = client.post("/bot-simulator/message", data={"message": "10:00"})
+
+    assert "Hola, somos Estudio Brillo." in greeting.text
+    assert "1. Ver servicios y precios" in greeting.text
+    assert "2. Sacar un turno" in greeting.text
+    assert "Decime que servicio queres" in booking_menu.text
+    assert "1. Corte" in booking_menu.text
+    assert "Perfecto. Corte cuesta" in service_selection.text
+    assert "Para Corte el" in day_selection.text
+    assert "te confirme el turno" in confirmation.text
+
+
+def test_bot_menu_can_return_without_losing_tenant_isolation(client: TestClient) -> None:
+    _create_full_bot_demo_data(client)
+    client.post("/bot-simulator/reset")
+
+    client.post("/bot-simulator/message", data={"message": "2"})
+    response = client.post("/bot-simulator/message", data={"message": "0"})
+
+    assert "Que queres hacer?" in response.text
+    assert "Consultar mi turno" in response.text
 
 
 def test_bot_webhook_requires_configured_secret(client: TestClient, monkeypatch) -> None:

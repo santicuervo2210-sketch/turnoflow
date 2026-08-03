@@ -106,7 +106,7 @@ class WorkingScheduleCreate(BaseModel):
     @model_validator(mode="after")
     def validate_time_range(self) -> "WorkingScheduleCreate":
         if self.start_time >= self.end_time:
-            raise ValueError("start_time must be before end_time")
+            raise ValueError("La hora de inicio debe ser anterior a la hora de fin.")
         return self
 
 
@@ -133,6 +133,7 @@ class AppointmentCreate(BaseModel):
     customer_id: int
     service_id: int
     starts_at: datetime
+    duration_minutes: int | None = Field(default=None, gt=0, le=480)
     notes: str | None = None
 
 

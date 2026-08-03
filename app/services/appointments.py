@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,9 @@ ACTIVE_BOOKING_STATUSES = (
 ACTIVE_ACCESS_STATUS = "active"
 SUSPENDED_ACCESS_STATUS = "suspended"
 SLOT_STEP_MINUTES = 15
+BUSINESS_WEEKDAYS = tuple(range(6))
+DEFAULT_OPENING_TIME = time(9, 0)
+DEFAULT_CLOSING_TIME = time(18, 0)
 
 
 class SchedulingError(Exception):
@@ -61,16 +64,8 @@ def _validate_same_shop(barber: Barber, customer: Customer, service: Service) ->
 def barber_can_perform_service(session: Session, barber: Barber, service: Service) -> bool:
     if barber.barber_shop_id != service.barber_shop_id or not barber.is_active or not service.is_active:
         return False
-    if service.id in _service_ids_for_barber(barber):
-        return True
-
-    active_barber_count = session.scalar(
-        select(func.count(Barber.id)).where(
-            Barber.barber_shop_id == barber.barber_shop_id,
-            Barber.is_active.is_(True),
-        )
-    ) or 0
-    return active_barber_count == 1
+    assigned_service_ids = _service_ids_for_barber(barber)
+    return not assigned_service_ids or service.id in assigned_service_ids
 
 
 def _validate_barber_can_perform_service(session: Session, barber: Barber, service: Service) -> None:
@@ -107,12 +102,41 @@ def activate_barber_shop(session: Session, barber_shop_id: int) -> BarberShop:
     return shop
 
 
-def _schedule_query(barber_id: int, starts_at: datetime) -> Select[tuple[WorkingSchedule]]:
-    return select(WorkingSchedule).where(
-        WorkingSchedule.barber_id == barber_id,
-        WorkingSchedule.day_of_week == starts_at.weekday(),
-        WorkingSchedule.is_active.is_(True),
-    )
+def business_hours_for_shop(session: Session, barber_shop_id: int) -> tuple[time, time]:
+    schedule = session.scalars(
+        select(WorkingSchedule)
+        .join(WorkingSchedule.barber)
+        .where(
+            Barber.barber_shop_id == barber_shop_id,
+            WorkingSchedule.day_of_week.in_(BUSINESS_WEEKDAYS),
+            WorkingSchedule.is_active.is_(True),
+        )
+        .order_by(WorkingSchedule.day_of_week, WorkingSchedule.id)
+    ).first()
+    if schedule is None:
+        return DEFAULT_OPENING_TIME, DEFAULT_CLOSING_TIME
+    return schedule.start_time, schedule.end_time
+
+
+def _working_windows(
+    session: Session,
+    barber: Barber,
+    target_date: date,
+) -> list[tuple[time, time]]:
+    if target_date.weekday() not in BUSINESS_WEEKDAYS:
+        return []
+
+    schedules = session.scalars(
+        select(WorkingSchedule).where(
+            WorkingSchedule.barber_id == barber.id,
+            WorkingSchedule.day_of_week == target_date.weekday(),
+            WorkingSchedule.is_active.is_(True),
+        )
+    ).all()
+    if schedules:
+        return [(schedule.start_time, schedule.end_time) for schedule in schedules]
+
+    return [business_hours_for_shop(session, barber.barber_shop_id)]
 
 
 def _active_appointments_query(
@@ -154,14 +178,16 @@ def ensure_slot_is_available(
 ) -> None:
     starts_at = _as_naive(starts_at)
     ends_at = _as_naive(ends_at)
-    schedules = session.scalars(_schedule_query(barber.id, starts_at)).all()
+    working_windows = _working_windows(session, barber, starts_at.date())
 
     is_inside_schedule = any(
-        datetime.combine(starts_at.date(), schedule.start_time) <= starts_at
-        and datetime.combine(starts_at.date(), schedule.end_time) >= ends_at
-        for schedule in schedules
+        datetime.combine(starts_at.date(), opening_time) <= starts_at
+        and datetime.combine(starts_at.date(), closing_time) >= ends_at
+        for opening_time, closing_time in working_windows
     )
     if not is_inside_schedule:
+        if starts_at.weekday() == 6:
+            raise SchedulingError("El negocio no toma turnos los domingos.")
         raise SchedulingError("El horario elegido esta fuera de la jornada del profesional.")
 
     overlapping_appointment = session.scalars(
@@ -187,6 +213,7 @@ def create_appointment(
     customer_id: int,
     service_id: int,
     starts_at: datetime,
+    duration_minutes: int | None = None,
     notes: str | None = None,
 ) -> Appointment:
     barber = _get_required(session, Barber, barber_id, "Barber")
@@ -197,8 +224,12 @@ def create_appointment(
     ensure_barber_shop_can_operate(session, barber.barber_shop_id)
     _validate_barber_can_perform_service(session, barber, service)
 
+    selected_duration = duration_minutes if duration_minutes is not None else service.duration_minutes
+    if selected_duration < 1 or selected_duration > 480:
+        raise SchedulingError("La duracion del turno debe estar entre 1 y 480 minutos.")
+
     starts_at = _as_naive(starts_at)
-    ends_at = starts_at + timedelta(minutes=service.duration_minutes)
+    ends_at = starts_at + timedelta(minutes=selected_duration)
     ensure_slot_is_available(session, barber, starts_at, ends_at)
 
     appointment = Appointment(
@@ -269,9 +300,9 @@ def reschedule_appointment(session: Session, appointment_id: int, starts_at: dat
         raise SchedulingError("Un turno cancelado no se puede reprogramar.")
 
     barber = _get_required(session, Barber, appointment.barber_id, "Barber")
-    service = _get_required(session, Service, appointment.service_id, "Service")
     starts_at = _as_naive(starts_at)
-    ends_at = starts_at + timedelta(minutes=service.duration_minutes)
+    current_duration = _as_naive(appointment.ends_at) - _as_naive(appointment.starts_at)
+    ends_at = starts_at + current_duration
 
     ensure_slot_is_available(
         session,
@@ -301,14 +332,8 @@ def get_available_slots(
     ensure_barber_shop_can_operate(session, barber.barber_shop_id)
     _validate_barber_can_perform_service(session, barber, service)
 
-    schedules = session.scalars(
-        select(WorkingSchedule).where(
-            WorkingSchedule.barber_id == barber.id,
-            WorkingSchedule.day_of_week == target_date.weekday(),
-            WorkingSchedule.is_active.is_(True),
-        )
-    ).all()
-    if not schedules:
+    working_windows = _working_windows(session, barber, target_date)
+    if not working_windows:
         return []
 
     day_start = datetime.combine(target_date, time.min)
@@ -334,9 +359,9 @@ def get_available_slots(
     service_delta = timedelta(minutes=service.duration_minutes)
     step_delta = timedelta(minutes=SLOT_STEP_MINUTES)
 
-    for schedule in schedules:
-        cursor = datetime.combine(target_date, schedule.start_time)
-        schedule_end = datetime.combine(target_date, schedule.end_time)
+    for opening_time, closing_time in working_windows:
+        cursor = datetime.combine(target_date, opening_time)
+        schedule_end = datetime.combine(target_date, closing_time)
 
         while cursor + service_delta <= schedule_end:
             slot_start = cursor

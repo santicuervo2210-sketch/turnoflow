@@ -47,7 +47,7 @@ async def security_headers(request: Request, call_next):
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     log_unhandled_error(request.method, request.url.path, exc)
-    return JSONResponse({"detail": "Internal server error"}, status_code=500)
+    return JSONResponse({"detail": "Error interno del servidor."}, status_code=500)
 
 
 @app.exception_handler(HTTPException)

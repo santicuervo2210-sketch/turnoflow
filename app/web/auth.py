@@ -181,15 +181,15 @@ class AdminAuthMiddleware(BaseHTTPMiddleware):
             if (path.startswith("/api") or path in {"/docs", "/redoc", "/openapi.json"}) and not is_owner_session_cookie(
                 cookie_value
             ):
-                return Response("Forbidden", status_code=HTTPStatus.FORBIDDEN)
+                return Response("Acceso prohibido.", status_code=HTTPStatus.FORBIDDEN)
             if _requires_csrf(path, request.method):
                 form_token = await _csrf_form_token(request)
                 csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
                 if not is_valid_csrf_token(csrf_cookie, form_token):
-                    return Response("Invalid CSRF token", status_code=HTTPStatus.FORBIDDEN)
+                    return Response("Token CSRF invalido.", status_code=HTTPStatus.FORBIDDEN)
             return await call_next(request)
 
         if path.startswith("/api") or path in {"/openapi.json"}:
-            return Response("Unauthorized", status_code=HTTPStatus.UNAUTHORIZED)
+            return Response("No autorizado.", status_code=HTTPStatus.UNAUTHORIZED)
 
         return RedirectResponse(f"/login?next={path}", status_code=HTTPStatus.SEE_OTHER)

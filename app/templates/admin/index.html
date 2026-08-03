@@ -432,10 +432,18 @@
                 <input class="form-control form-control-sm" name="name" value="{{ barber.name }}" required>
                 <input class="form-control form-control-sm" name="phone" value="{{ barber.phone or '' }}" placeholder="Telefono">
                 <input class="form-control form-control-sm" name="email" value="{{ barber.email or '' }}" placeholder="Email">
-                <select class="form-select form-select-sm" name="service_id">
-                  <option value="">Mantener servicios</option>
-                  {% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}
-                </select>
+                <div class="col-12">
+                  <span class="form-label d-block mb-1">Servicios que realiza</span>
+                  <div class="d-flex flex-wrap gap-2">
+                    {% for service in services if service.barber_shop_id == barber.barber_shop_id and service.is_active %}
+                      <label class="form-check form-check-inline m-0">
+                        <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}" {% if service in barber.services %}checked{% endif %}>
+                        <span class="form-check-label">{{ service.name }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                  <span class="form-text">Sin marcar: realiza todos los servicios.</span>
+                </div>
                 <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>
               </form>
             </article>
@@ -450,13 +458,13 @@
               <div class="tf-compact-row">
                 <div>
                   <strong>{{ schedule.barber.name }}</strong>
-                  <span>Dia {{ schedule.day_of_week }} / {{ schedule.start_time }} - {{ schedule.end_time }}</span>
+                  <span>{{ weekday_labels[schedule.day_of_week] }} / {{ schedule.start_time.strftime("%H:%M") }} - {{ schedule.end_time.strftime("%H:%M") }}</span>
                 </div>
                 <form action="/admin/working-schedules/{{ schedule.id }}/edit" method="post" class="tf-inline-edit">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <select class="form-select form-select-sm" name="day_of_week" required>
-                    {% for option in range(7) %}
-                      <option value="{{ option }}" {% if schedule.day_of_week == option %}selected{% endif %}>Dia {{ option }}</option>
+                    {% for option in range(6) %}
+                      <option value="{{ option }}" {% if schedule.day_of_week == option %}selected{% endif %}>{{ weekday_labels[option] }}</option>
                     {% endfor %}
                   </select>
                   <input class="form-control form-control-sm" type="time" name="start_time" value="{{ schedule.start_time }}" required>
@@ -522,6 +530,19 @@
                   <span>Sin profesionales</span>
                 {% endfor %}
               </div>
+              {% set general_hours = general_hours_by_shop[shop.id] %}
+              <form action="/admin/barber-shops/{{ shop.id }}/hours" method="post" class="tf-inline-form mt-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div>
+                  <label class="form-label mb-1">Horario general, lunes a sabado</label>
+                  <div class="d-flex flex-wrap gap-2">
+                    <input class="form-control form-control-sm" type="time" name="opening_time" value="{{ general_hours[0].strftime('%H:%M') }}" required>
+                    <input class="form-control form-control-sm" type="time" name="closing_time" value="{{ general_hours[1].strftime('%H:%M') }}" required>
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Actualizar horario</button>
+                  </div>
+                  <span class="form-text">El domingo permanece cerrado. Luego podes ajustar excepciones desde Equipo.</span>
+                </div>
+              </form>
               {% if is_owner_view and shop.access_status == "active" %}
                 <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="tf-inline-form mt-2">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -695,21 +716,29 @@
               <label class="form-label">Telefono nuevo cliente</label>
               <input class="form-control" name="new_customer_phone" placeholder="Telefono opcional">
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Servicio</label>
               <select class="form-select" name="service_id" required>
-                {% for service in services if service.is_active %}<option value="{{ service.id }}" data-shop-id="{{ service.barber_shop_id }}">{{ service.name }} - ${{ service.price }}</option>{% endfor %}
+                {% for service in services if service.is_active %}<option value="{{ service.id }}" data-shop-id="{{ service.barber_shop_id }}" data-duration="{{ service.duration_minutes }}">{{ service.name }} - ${{ service.price }}</option>{% endfor %}
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Profesional</label>
               <select class="form-select" name="barber_id" required>
-                {% for barber in barbers if barber.is_active %}<option value="{{ barber.id }}" data-shop-id="{{ barber.barber_shop_id }}" data-service-ids="{{ barber.services|map(attribute='id')|join(',') }}" data-solo="{{ 'true' if barber.barber_shop_id in single_barber_shop_ids else 'false' }}">{{ barber.name }}</option>{% endfor %}
+                {% for barber in barbers if barber.is_active %}<option value="{{ barber.id }}" data-shop-id="{{ barber.barber_shop_id }}" data-service-ids="{{ barber.services|map(attribute='id')|join(',') }}" data-all-services="{{ 'true' if not barber.services else 'false' }}">{{ barber.name }}</option>{% endfor %}
               </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Dia y hora</label>
               <input class="form-control" type="datetime-local" name="starts_at" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Duracion</label>
+              <div class="input-group">
+                <input class="form-control" type="number" min="1" max="480" step="5" name="duration_minutes" required>
+                <span class="input-group-text">min</span>
+              </div>
+              <div class="form-text">Se completa segun el servicio.</div>
             </div>
             <div class="col-12">
               <div class="form-text" id="appointmentCompatibilityHelp"></div>
@@ -795,11 +824,11 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header"><h2 class="modal-title h5">Crear profesional</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
-      <form action="/admin/barbers" method="post">
+      <form action="/admin/barbers" method="post" id="createBarberForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-body row g-3">
           <div class="col-12">
-            <select class="form-select" name="barber_shop_id" required>
+            <select class="form-select" name="barber_shop_id" id="barberShopSelect" required>
               {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
             </select>
           </div>
@@ -807,9 +836,16 @@
           <div class="col-6"><input class="form-control" name="phone" placeholder="Telefono"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
           <div class="col-12">
-            <select class="form-select" name="service_id">
-              {% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}
-            </select>
+            <label class="form-label">Servicios que realiza</label>
+            <div class="d-flex flex-wrap gap-2">
+              {% for service in services %}
+                <label class="form-check form-check-inline m-0" data-service-shop-id="{{ service.barber_shop_id }}">
+                  <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}">
+                  <span class="form-check-label">{{ service.name }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <div class="form-text">Deja todas sin marcar si puede realizar cualquier servicio.</div>
           </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary" type="submit">Crear</button></div>
@@ -861,7 +897,6 @@
               <option value="3">Jueves</option>
               <option value="4">Viernes</option>
               <option value="5">Sabado</option>
-              <option value="6">Domingo</option>
             </select>
           </div>
           <div class="col-6"><input class="form-control" type="time" name="start_time" required></div>
@@ -907,6 +942,7 @@
     const newCustomerOption = customerSelect?.options[0];
     const compatibilityHelp = document.getElementById("appointmentCompatibilityHelp");
     const submitButton = form.querySelector('button[type="submit"]');
+    const durationInput = form.querySelector('[name="duration_minutes"]');
 
     const visibleOptions = (select) => Array.from(select.options).filter((option) => !option.hidden);
 
@@ -932,7 +968,7 @@
       Array.from(barberSelect.options).forEach((option) => {
         const belongsToShop = option.dataset.shopId === shopId;
         const serviceIds = (option.dataset.serviceIds || "").split(",").filter(Boolean);
-        const isCompatible = option.dataset.solo === "true" || serviceIds.includes(serviceId);
+        const isCompatible = option.dataset.allServices === "true" || serviceIds.includes(serviceId);
         option.hidden = !belongsToShop || !isCompatible;
       });
       keepValidSelection(barberSelect);
@@ -949,6 +985,10 @@
         compatibilityHelp.classList.toggle("text-danger", !hasCompatibleBarber);
       }
       if (submitButton) submitButton.disabled = !hasCompatibleBarber;
+      const selectedService = serviceSelect?.options[serviceSelect.selectedIndex];
+      if (durationInput && selectedService?.dataset.duration) {
+        durationInput.value = selectedService.dataset.duration;
+      }
     };
 
     const syncAppointmentCatalog = () => {
@@ -962,6 +1002,21 @@
     shopSelect.addEventListener("change", syncAppointmentCatalog);
     serviceSelect?.addEventListener("change", syncCompatibility);
     syncAppointmentCatalog();
+  })();
+
+  (() => {
+    const form = document.getElementById("createBarberForm");
+    const shopSelect = document.getElementById("barberShopSelect");
+    if (!form || !shopSelect) return;
+    const syncServices = () => {
+      form.querySelectorAll("[data-service-shop-id]").forEach((label) => {
+        const visible = label.dataset.serviceShopId === shopSelect.value;
+        label.hidden = !visible;
+        if (!visible) label.querySelector("input").checked = false;
+      });
+    };
+    shopSelect.addEventListener("change", syncServices);
+    syncServices();
   })();
 </script>
 {% endblock %}

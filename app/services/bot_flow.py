@@ -86,12 +86,14 @@ class BotConversationContext:
     service_id: int | None = None
     customer_id: int | None = None
     last_target_date: date | None = None
+    flow: str | None = None
 
     def reset(self) -> None:
         self.barber_shop_id = None
         self.service_id = None
         self.customer_id = None
         self.last_target_date = None
+        self.flow = None
 
 
 def _format_money(value) -> str:
@@ -138,10 +140,10 @@ def _list_services(session: Session, barber_shop_id: int) -> BotMessages:
         return [("bot", "Todavia no hay servicios cargados.")]
 
     lines = [
-        f"#{service.id} {service.name} - {service.duration_minutes} min - {_format_money(service.price)}"
-        for service in services
+        f"{position}. {service.name} - {service.duration_minutes} min - {_format_money(service.price)}"
+        for position, service in enumerate(services, start=1)
     ]
-    return [("bot", "Servicios disponibles: " + " | ".join(lines))]
+    return [("bot", "Servicios y precios: " + " | ".join(lines) + ". Escribi 2 para sacar un turno.")]
 
 
 def _looks_like_price_question(message: str) -> bool:
@@ -470,7 +472,7 @@ def _handle_availability_question(
 
     service = _find_service_for_conversation(session, message, barber_shop_id, context)
     if service is None:
-        return [("bot", "Decime que servicio queres: corte, claritos o corte + claritos.")]
+        return _booking_service_menu(session, barber_shop_id)
 
     barber = _find_barber_for_service(session, service, message)
     if barber is None:
@@ -750,7 +752,9 @@ def _handle_booking_request(
 
     service = service_from_message or _find_service_for_conversation(session, message, barber_shop_id, context)
     if service is None:
-        return [("bot", "Que servicio queres reservar: corte, claritos o corte + claritos?")]
+        if context is not None:
+            context.flow = "booking_service"
+        return _booking_service_menu(session, barber_shop_id)
 
     barber = _find_barber_for_service(session, service, message)
     if barber is None:
@@ -791,6 +795,7 @@ def _handle_booking_request(
         if context is not None:
             context.barber_shop_id = barber_shop_id
             context.last_target_date = appointment.starts_at.date()
+            context.flow = "main"
     except SchedulingError as exc:
         if "superpone" in exc.detail:
             slots = get_available_slots(
@@ -986,6 +991,124 @@ def _handle_ai_intent(session: Session, intent: BotIntent, barber_shop_id: int, 
     return None
 
 
+def _main_menu_text(session: Session, barber_shop_id: int, *, include_greeting: bool) -> str:
+    greeting = "Hola! Soy el asistente de turnos."
+    settings = session.scalars(
+        select(BotSettings).where(BotSettings.barber_shop_id == barber_shop_id)
+    ).first()
+    if settings is not None and settings.greeting_message.strip():
+        greeting = settings.greeting_message.strip()
+
+    menu = (
+        "Que queres hacer? "
+        "1. Ver servicios y precios | "
+        "2. Sacar un turno | "
+        "3. Consultar mi turno | "
+        "4. Cancelar o reprogramar"
+    )
+    return f"{greeting} {menu}" if include_greeting else menu
+
+
+def _booking_service_menu(session: Session, barber_shop_id: int) -> BotMessages:
+    services = _active_services(session, barber_shop_id)
+    if not services:
+        return [("bot", "Todavia no hay servicios cargados para reservar.")]
+    options = " | ".join(
+        f"{position}. {service.name} ({service.duration_minutes} min, {_format_money(service.price)})"
+        for position, service in enumerate(services, start=1)
+    )
+    return [("bot", f"Decime que servicio queres: {options}. Escribi 0 para volver.")]
+
+
+def _handle_menu_navigation(
+    session: Session,
+    normalized: str,
+    barber_shop_id: int,
+    from_phone: str,
+    context: BotConversationContext | None,
+) -> BotMessages | None:
+    if normalized in {"menu", "volver", "volver al menu", "0"}:
+        if context is not None:
+            context.reset()
+            context.barber_shop_id = barber_shop_id
+            context.flow = "main"
+        return [("bot", _main_menu_text(session, barber_shop_id, include_greeting=False))]
+
+    if normalized in {_normalize_text(word) for word in GREETING_WORDS}:
+        if context is not None:
+            context.reset()
+            context.barber_shop_id = barber_shop_id
+            context.flow = "main"
+        return [("bot", _main_menu_text(session, barber_shop_id, include_greeting=True))]
+
+    if context is not None and context.flow == "manage_appointment":
+        if normalized == "1":
+            context.flow = "main"
+            return _handle_cancel_request(
+                session,
+                "cancelar turno",
+                barber_shop_id,
+                from_phone,
+                context,
+            )
+        if normalized == "2":
+            context.flow = "reschedule"
+            return [("bot", "Decime el nuevo dia y horario. Por ejemplo: sabado a las 10:00. Escribi 0 para volver.")]
+
+    if context is not None and context.flow == "reschedule":
+        response = _handle_reschedule_request(
+            session,
+            f"reprogramar {normalized}",
+            barber_shop_id,
+            from_phone,
+            context,
+        )
+        if response is not None:
+            return response
+
+    if context is not None and context.flow == "booking_service" and normalized.isdigit():
+        services = _active_services(session, barber_shop_id)
+        selected_index = int(normalized) - 1
+        if 0 <= selected_index < len(services):
+            service = services[selected_index]
+            context.service_id = service.id
+            context.flow = "booking_date"
+            return _handle_service_interest(
+                session,
+                f"quiero {service.name}",
+                barber_shop_id,
+                context,
+            )
+        return [("bot", "Esa opcion no existe. Elegi un servicio de la lista o escribi 0 para volver.")]
+
+    if normalized == "1":
+        if context is not None:
+            context.flow = "main"
+        return _list_services(session, barber_shop_id)
+    if normalized == "2":
+        if context is not None:
+            context.service_id = None
+            context.last_target_date = None
+            context.flow = "booking_service"
+        return _booking_service_menu(session, barber_shop_id)
+    if normalized == "3":
+        if context is not None:
+            context.flow = "main"
+        return _handle_appointment_lookup(
+            session,
+            "consultar mi turno",
+            barber_shop_id,
+            from_phone,
+            context,
+        )
+    if normalized == "4":
+        if context is not None:
+            context.flow = "manage_appointment"
+        return [("bot", "Elegi una opcion: 1. Cancelar mi turno | 2. Reprogramar mi turno | 0. Volver")]
+
+    return None
+
+
 def process_bot_message(
     session: Session,
     message: str,
@@ -1004,6 +1127,16 @@ def process_bot_message(
 
     if not _has_enabled_bot(session, barber_shop_id):
         return [("bot", "El bot esta desactivado para este negocio.")]
+
+    menu_response = _handle_menu_navigation(
+        session,
+        normalized,
+        barber_shop_id,
+        from_phone,
+        context,
+    )
+    if menu_response is not None:
+        return menu_response
 
     ai_intent = classify_with_ai(session, message, barber_shop_id)
     if ai_intent is not None:
@@ -1090,13 +1223,7 @@ def process_bot_message(
         return service_interest_answer
 
     if any(word in normalized for word in GREETING_WORDS):
-        return [
-            (
-                "bot",
-                "Hola! Soy el asistente de TurnoFlow. Te puedo contar precios, mostrar horarios libres "
-                "o reservarte un turno confirmado.",
-            )
-        ]
+        return [("bot", _main_menu_text(session, barber_shop_id, include_greeting=True))]
 
     if "servicio" in normalized:
         return _list_services(session, barber_shop_id)
@@ -1110,6 +1237,6 @@ def process_bot_message(
     return [
         (
             "bot",
-            "Puedo mostrar servicios, profesionales, clientes, horarios o registrar una reserva con datos concretos.",
+            "No entendi ese mensaje. Escribi menu para ver las opciones disponibles.",
         )
     ]

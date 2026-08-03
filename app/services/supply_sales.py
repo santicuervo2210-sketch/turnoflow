@@ -21,9 +21,9 @@ def create_supply_sale(
     if appointment_id is not None:
         appointment = session.get(Appointment, appointment_id)
         if appointment is None:
-            raise SchedulingError("Appointment not found", HTTPStatus.NOT_FOUND)
+            raise SchedulingError("Turno no encontrado.", HTTPStatus.NOT_FOUND)
         if appointment.barber_shop_id != barber_shop_id:
-            raise SchedulingError("Appointment must belong to barber shop")
+            raise SchedulingError("El turno debe pertenecer al negocio.")
 
     sale = SupplySale(
         barber_shop_id=barber_shop_id,

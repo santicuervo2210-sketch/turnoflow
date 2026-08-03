@@ -24,7 +24,7 @@ class ReminderPreview:
 def get_or_create_bot_settings(session: Session, barber_shop_id: int) -> BotSettings:
     shop = session.get(BarberShop, barber_shop_id)
     if shop is None:
-        raise SchedulingError("Barber shop not found", 404)
+        raise SchedulingError("Negocio no encontrado.", 404)
 
     settings = session.scalars(
         select(BotSettings).where(BotSettings.barber_shop_id == barber_shop_id)
@@ -117,4 +117,3 @@ def list_pending_reminders(
         )
 
     return previews
-
