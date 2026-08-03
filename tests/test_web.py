@@ -1353,7 +1353,7 @@ def test_appointment_form_accepts_thirty_minute_duration(client: TestClient) -> 
     response = client.get("/admin")
 
     duration_input = re.search(
-        r'<input class="form-control" type="number" min="5" max="480" step="5" name="duration_minutes" required>',
+        r'<input class="form-control" type="number" min="1" max="480" step="1" inputmode="numeric" name="duration_minutes" required>',
         response.text,
     )
     assert duration_input is not None
