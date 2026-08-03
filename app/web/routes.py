@@ -718,6 +718,7 @@ def admin_create_barber_shop(
     main_barber_name: str | None = Form(default=None),
     main_barber_phone: str | None = Form(default=None),
     main_barber_email: str | None = Form(default=None),
+    next_path: str | None = Form(default="/admin"),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     redirect = _redirect_if_not_owner(request, session)
@@ -739,7 +740,7 @@ def admin_create_barber_shop(
             )
         )
     _save(session, shop)
-    return _redirect_to("/admin")
+    return _redirect_to(_safe_next_path(next_path))
 
 
 @router.post("/admin/barber-shops/{barber_shop_id}/suspend")

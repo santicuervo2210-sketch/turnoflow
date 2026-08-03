@@ -812,6 +812,9 @@ def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
     assert "Pago Demo" in owner_response.text
     assert "pago / activo" in owner_response.text
     assert "plan basic" in owner_response.text
+    assert "Crear negocio" in owner_response.text
+    assert "Crear acceso de cliente" in owner_response.text
+    assert "Los profesionales se cargan desde Equipo" in owner_response.text
 
     suspend_response = client.post(
         f"/admin/barber-shops/{shop_id}/suspend",
@@ -823,6 +826,27 @@ def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
     suspended_owner_response = client.get("/owner")
     assert "suspendido" in suspended_owner_response.text
     assert "Motivo: Pago vencido" in suspended_owner_response.text
+
+
+def test_owner_can_create_shop_and_return_to_owner_panel(client: TestClient) -> None:
+    response = client.post(
+        "/admin/barber-shops",
+        data={
+            "name": "Owner Alta Demo",
+            "phone": "111",
+            "address": "Street 1",
+            "main_barber_name": "",
+            "main_barber_phone": "",
+            "main_barber_email": "",
+            "next_path": "/owner",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/owner"
+    owner_response = client.get("/owner")
+    assert "Owner Alta Demo" in owner_response.text
 
 
 def test_admin_cancel_shows_released_slot_notice(client: TestClient) -> None:
