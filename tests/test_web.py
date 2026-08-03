@@ -3,6 +3,7 @@ import re
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
+import app.web.routes as web_routes
 
 
 def _csrf_token_from(client: TestClient, path: str) -> str:
@@ -77,6 +78,26 @@ def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> 
     admin_response = client.get("/admin")
     assert admin_response.status_code == 200
     assert "Agenda y caja" in admin_response.text
+
+
+def test_env_owner_login_does_not_query_users_table(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "admin_username", "owner")
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    monkeypatch.setattr(settings, "session_secret", "test-secret")
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("env owner login should not query database users")
+
+    monkeypatch.setattr(web_routes, "authenticate_user", fail_if_called)
+
+    response = client.post(
+        "/login",
+        data={"username": "owner", "password": "secret", "next_path": "/admin"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin"
 
 
 def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch) -> None:

@@ -577,9 +577,13 @@ def login_submit(
     ):
         raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Too many login attempts")
 
+    if validate_admin_credentials(username, password):
+        response = _redirect_to(_safe_next_path(next_path))
+        set_session_cookie(response, session_subject_for_env_owner(username))
+        return response
+
     user = authenticate_user(session, username, password)
-    env_owner_login = user is None and validate_admin_credentials(username, password)
-    if user is None and not env_owner_login:
+    if user is None:
         return templates.TemplateResponse(
             request,
             "auth/login.html",
@@ -592,8 +596,7 @@ def login_submit(
         )
 
     response = _redirect_to(_safe_next_path(next_path))
-    subject = session_subject_for_user(user) if user is not None else session_subject_for_env_owner(username)
-    set_session_cookie(response, subject)
+    set_session_cookie(response, session_subject_for_user(user))
     return response
 
 
