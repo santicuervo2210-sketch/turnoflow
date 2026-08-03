@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,6 +48,15 @@ async def security_headers(request: Request, call_next):
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     log_unhandled_error(request.method, request.url.path, exc)
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    return JSONResponse(
+        {"detail": exc.detail},
+        status_code=exc.status_code,
+        headers=exc.headers,
+    )
 
 
 @app.get("/health")
