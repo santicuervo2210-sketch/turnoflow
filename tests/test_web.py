@@ -507,6 +507,94 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
     assert "historial debe conservarse" in delete_response.text
 
 
+def test_admin_manual_booking_accepts_any_shop_service_for_the_only_professional(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Profesional Unico"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_id,
+            "name": "Corte",
+            "duration_minutes": 30,
+            "price": "10000.00",
+        },
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Martin", "service_ids": []},
+    ).json()["id"]
+    client.post(
+        "/api/working-schedules",
+        json={
+            "barber_id": barber_id,
+            "day_of_week": 5,
+            "start_time": "09:00:00",
+            "end_time": "18:00:00",
+        },
+    )
+
+    dashboard = client.get("/admin")
+    assert f'data-solo="true"' in dashboard.text
+    assert "filterBarbersByService" in dashboard.text
+
+    response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(barber_id),
+            "customer_id": "",
+            "new_customer_name": "Cliente Presencial",
+            "new_customer_phone": "",
+            "service_id": str(service_id),
+            "starts_at": "2026-08-08T10:00",
+            "notes": "Creado en el local",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    appointments = client.get("/api/appointments").json()
+    assert len(appointments) == 1
+    assert appointments[0]["status"] == "confirmed"
+
+
+def test_admin_manual_booking_rejects_incompatible_professional_in_spanish(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Equipo Multiple"}).json()["id"]
+    cut_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Corte", "duration_minutes": 30, "price": "10000.00"},
+    ).json()["id"]
+    color_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Color", "duration_minutes": 60, "price": "20000.00"},
+    ).json()["id"]
+    cut_barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Martin", "service_ids": [cut_id]},
+    ).json()["id"]
+    client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Ana", "service_ids": [color_id]},
+    )
+    customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente", "phone": "111"},
+    ).json()["id"]
+
+    response = client.post(
+        "/admin/appointments",
+        data={
+            "barber_id": str(cut_barber_id),
+            "customer_id": str(customer_id),
+            "service_id": str(color_id),
+            "starts_at": "2026-08-08T10:00",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "El profesional seleccionado no realiza ese servicio" in response.text
+    assert "Barber cannot perform" not in response.text
+    assert client.get("/api/appointments").json() == []
+
+
 def test_admin_customer_module_is_a_list_with_separate_detail_and_delete(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Clientes Demo"}).json()["id"]
     customer_id = client.post(
@@ -910,7 +998,7 @@ def test_admin_time_block_hides_slots_and_blocks_booking(client: TestClient) -> 
         },
     )
     assert booking_response.status_code == 409
-    assert booking_response.json()["detail"] == "Selected time is blocked by the barber"
+    assert booking_response.json()["detail"] == "Ese horario fue bloqueado por el profesional."
 
     release_response = client.post("/admin/time-blocks/1/deactivate", follow_redirects=False)
     assert release_response.status_code == 303

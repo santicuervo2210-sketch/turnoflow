@@ -232,6 +232,44 @@ def test_bot_webhook_resolves_shop_from_business_number(client: TestClient) -> N
     assert "Corte cuesta $10000.00" in payload["messages"][0]["text"]
 
 
+def test_bot_books_with_the_only_professional_even_without_service_assignment(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Bot Profesional Unico"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_id,
+            "name": "Corte",
+            "duration_minutes": 30,
+            "price": "10000.00",
+        },
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Martin", "service_ids": []},
+    ).json()["id"]
+    client.post(
+        "/api/working-schedules",
+        json={
+            "barber_id": barber_id,
+            "day_of_week": 5,
+            "start_time": "09:00:00",
+            "end_time": "18:00:00",
+        },
+    )
+
+    response = client.post(
+        "/bot-simulator/message",
+        data={"message": "reservame corte el 2026-08-08 a las 10:00"},
+    )
+
+    assert response.status_code == 200
+    assert "te confirme el turno" in response.text
+    appointments = client.get("/api/appointments").json()
+    assert len(appointments) == 1
+    assert appointments[0]["barber_id"] == barber_id
+    assert appointments[0]["service_id"] == service_id
+
+
 def test_bot_webhook_rejects_unknown_business_number(client: TestClient) -> None:
     response = client.post(
         "/bot/webhook",

@@ -29,6 +29,7 @@ from app.models import (
 from app.services.appointments import (
     SchedulingError,
     activate_barber_shop,
+    barber_can_perform_service,
     cancel_appointment,
     create_appointment,
     get_available_slots,
@@ -289,13 +290,24 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         if appointment.service is not None
     )
     today_supply_revenue = sum(sale.total_price for sale in today_supply_sales)
+    services = list(session.scalars(_shop_filter(select(Service).order_by(Service.id), shop_id, Service)).all())
+    barbers = list(session.scalars(_shop_filter(select(Barber).order_by(Barber.id), shop_id, Barber)).all())
+    customers = list(session.scalars(_shop_filter(select(Customer).order_by(Customer.id), shop_id, Customer)).all())
+    active_barber_counts: dict[int, int] = {}
+    for barber in barbers:
+        if barber.is_active:
+            active_barber_counts[barber.barber_shop_id] = active_barber_counts.get(barber.barber_shop_id, 0) + 1
+    single_barber_shop_ids = {
+        barber_shop_id for barber_shop_id, count in active_barber_counts.items() if count == 1
+    }
     context = {
         "request": request,
         "now": now,
         "shops": shops,
-        "services": list(session.scalars(_shop_filter(select(Service).order_by(Service.id), shop_id, Service)).all()),
-        "barbers": list(session.scalars(_shop_filter(select(Barber).order_by(Barber.id), shop_id, Barber)).all()),
-        "customers": list(session.scalars(_shop_filter(select(Customer).order_by(Customer.id), shop_id, Customer)).all()),
+        "services": services,
+        "barbers": barbers,
+        "customers": customers,
+        "single_barber_shop_ids": single_barber_shop_ids,
         "schedules": list(
             session.scalars(
                 select(WorkingSchedule)
@@ -410,10 +422,7 @@ def _first_barber_for_service(session: Session, service: Service) -> Barber | No
             Barber.is_active.is_(True),
         ).order_by(Barber.id)
     ).all()
-    return next(
-        (barber for barber in barbers if any(barber_service.id == service.id for barber_service in barber.services)),
-        None,
-    )
+    return next((barber for barber in barbers if barber_can_perform_service(session, barber, service)), None)
 
 
 def _bot_simulator_shop_id(request: Request, session: Session) -> int | None:
@@ -1265,7 +1274,7 @@ def admin_create_appointment(
         barber = session.get(Barber, barber_id)
         service = session.get(Service, service_id)
         if barber is None or service is None:
-            raise SchedulingError("Barber or service not found", HTTPStatus.NOT_FOUND)
+            raise SchedulingError("No se encontro el profesional o el servicio.", HTTPStatus.NOT_FOUND)
         redirect = _redirect_if_shop_not_allowed(request, session, barber.barber_shop_id)
         if redirect is not None:
             return redirect
@@ -1324,6 +1333,15 @@ def admin_create_appointment(
                 error=exc.detail,
             ),
             status_code=exc.status_code,
+        )
+    except IntegrityError:
+        session.rollback()
+        return _admin_error_response(
+            request,
+            session,
+            "No se pudo crear el turno porque el cliente o el horario ya fue registrado. Actualiza la agenda e intenta de nuevo.",
+            status_code=HTTPStatus.CONFLICT,
+            selected_module="agenda",
         )
     return _redirect_to("/admin")
 

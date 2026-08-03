@@ -13,6 +13,7 @@ from app.models import Appointment, AppointmentStatus, Barber, BarberShop, BotSe
 from app.services.ai_bot import BotIntent, classify_with_ai
 from app.services.appointments import (
     SchedulingError,
+    barber_can_perform_service,
     cancel_appointment,
     create_appointment,
     get_available_slots,
@@ -293,15 +294,13 @@ def _find_barber_for_service(session: Session, service: Service, message: str) -
         ).order_by(Barber.id)
     ).all()
 
-    for barber in barbers:
+    compatible_barbers = [barber for barber in barbers if barber_can_perform_service(session, barber, service)]
+
+    for barber in compatible_barbers:
         if _normalize_text(barber.name) in message:
             return barber
 
-    for barber in barbers:
-        if any(barber_service.id == service.id for barber_service in barber.services):
-            return barber
-
-    return None
+    return compatible_barbers[0] if compatible_barbers else None
 
 
 def _customer_for_sender_phone(session: Session, barber_shop_id: int, from_phone: str) -> Customer:
@@ -793,7 +792,7 @@ def _handle_booking_request(
             context.barber_shop_id = barber_shop_id
             context.last_target_date = appointment.starts_at.date()
     except SchedulingError as exc:
-        if "overlaps" in exc.detail:
+        if "superpone" in exc.detail:
             slots = get_available_slots(
                 session,
                 barber_id=barber.id,

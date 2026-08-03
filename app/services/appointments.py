@@ -1,7 +1,8 @@
 from datetime import UTC, date, datetime, time, timedelta
 from http import HTTPStatus
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, AppointmentStatus, Barber, BarberShop, BarberTimeBlock, Customer, Service, WorkingSchedule
@@ -36,7 +37,14 @@ def _overlaps(first_start: datetime, first_end: datetime, second_start: datetime
 def _get_required(session: Session, model: type, object_id: int, label: str):
     item = session.get(model, object_id)
     if item is None:
-        raise SchedulingError(f"{label} not found", HTTPStatus.NOT_FOUND)
+        labels = {
+            "Appointment": "Turno",
+            "Barber": "Profesional",
+            "Barber shop": "Negocio",
+            "Customer": "Cliente",
+            "Service": "Servicio",
+        }
+        raise SchedulingError(f"{labels.get(label, label)} no encontrado.", HTTPStatus.NOT_FOUND)
     return item
 
 
@@ -47,18 +55,35 @@ def _service_ids_for_barber(barber: Barber) -> set[int]:
 def _validate_same_shop(barber: Barber, customer: Customer, service: Service) -> None:
     shop_ids = {barber.barber_shop_id, customer.barber_shop_id, service.barber_shop_id}
     if len(shop_ids) != 1:
-        raise SchedulingError("Barber, customer and service must belong to the same barber shop")
+        raise SchedulingError("El profesional, el cliente y el servicio deben pertenecer al mismo negocio.")
 
 
-def _validate_barber_can_perform_service(barber: Barber, service: Service) -> None:
-    if service.id not in _service_ids_for_barber(barber):
-        raise SchedulingError("Barber cannot perform this service")
+def barber_can_perform_service(session: Session, barber: Barber, service: Service) -> bool:
+    if barber.barber_shop_id != service.barber_shop_id or not barber.is_active or not service.is_active:
+        return False
+    if service.id in _service_ids_for_barber(barber):
+        return True
+
+    active_barber_count = session.scalar(
+        select(func.count(Barber.id)).where(
+            Barber.barber_shop_id == barber.barber_shop_id,
+            Barber.is_active.is_(True),
+        )
+    ) or 0
+    return active_barber_count == 1
+
+
+def _validate_barber_can_perform_service(session: Session, barber: Barber, service: Service) -> None:
+    if not barber_can_perform_service(session, barber, service):
+        raise SchedulingError(
+            "El profesional seleccionado no realiza ese servicio. Elegi otro profesional o asignale el servicio desde Equipo."
+        )
 
 
 def ensure_barber_shop_can_operate(session: Session, barber_shop_id: int) -> BarberShop:
     shop = _get_required(session, BarberShop, barber_shop_id, "Barber shop")
     if shop.access_status != ACTIVE_ACCESS_STATUS:
-        raise SchedulingError("Barber shop access is suspended", HTTPStatus.FORBIDDEN)
+        raise SchedulingError("El acceso del negocio esta suspendido.", HTTPStatus.FORBIDDEN)
     return shop
 
 
@@ -137,7 +162,7 @@ def ensure_slot_is_available(
         for schedule in schedules
     )
     if not is_inside_schedule:
-        raise SchedulingError("Selected time is outside the barber working schedule")
+        raise SchedulingError("El horario elegido esta fuera de la jornada del profesional.")
 
     overlapping_appointment = session.scalars(
         _active_appointments_query(
@@ -148,11 +173,11 @@ def ensure_slot_is_available(
         )
     ).first()
     if overlapping_appointment is not None:
-        raise SchedulingError("Selected time overlaps another active appointment", HTTPStatus.CONFLICT)
+        raise SchedulingError("Ese horario se superpone con otro turno activo.", HTTPStatus.CONFLICT)
 
     overlapping_block = session.scalars(_active_time_blocks_query(barber.id, starts_at, ends_at)).first()
     if overlapping_block is not None:
-        raise SchedulingError("Selected time is blocked by the barber", HTTPStatus.CONFLICT)
+        raise SchedulingError("Ese horario fue bloqueado por el profesional.", HTTPStatus.CONFLICT)
 
 
 def create_appointment(
@@ -170,7 +195,7 @@ def create_appointment(
 
     _validate_same_shop(barber, customer, service)
     ensure_barber_shop_can_operate(session, barber.barber_shop_id)
-    _validate_barber_can_perform_service(barber, service)
+    _validate_barber_can_perform_service(session, barber, service)
 
     starts_at = _as_naive(starts_at)
     ends_at = starts_at + timedelta(minutes=service.duration_minutes)
@@ -186,7 +211,14 @@ def create_appointment(
         notes=notes,
     )
     session.add(appointment)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise SchedulingError(
+            "Ese horario acaba de ser reservado. Elegi otro horario disponible.",
+            HTTPStatus.CONFLICT,
+        ) from exc
     session.refresh(appointment)
     return appointment
 
@@ -234,7 +266,7 @@ def mark_appointment_unpaid(session: Session, appointment_id: int) -> Appointmen
 def reschedule_appointment(session: Session, appointment_id: int, starts_at: datetime) -> Appointment:
     appointment = _get_required(session, Appointment, appointment_id, "Appointment")
     if appointment.status == AppointmentStatus.CANCELLED.value:
-        raise SchedulingError("Cancelled appointments cannot be rescheduled")
+        raise SchedulingError("Un turno cancelado no se puede reprogramar.")
 
     barber = _get_required(session, Barber, appointment.barber_id, "Barber")
     service = _get_required(session, Service, appointment.service_id, "Service")
@@ -267,7 +299,7 @@ def get_available_slots(
     barber = _get_required(session, Barber, barber_id, "Barber")
     service = _get_required(session, Service, service_id, "Service")
     ensure_barber_shop_can_operate(session, barber.barber_shop_id)
-    _validate_barber_can_perform_service(barber, service)
+    _validate_barber_can_perform_service(session, barber, service)
 
     schedules = session.scalars(
         select(WorkingSchedule).where(

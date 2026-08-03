@@ -119,7 +119,7 @@ def test_management_and_booking_flow(client: TestClient) -> None:
         },
     )
     assert overlap_response.status_code == 409
-    assert overlap_response.json()["detail"] == "Selected time overlaps another active appointment"
+    assert overlap_response.json()["detail"] == "Ese horario se superpone con otro turno activo."
 
     availability_after_booking = client.get(
         "/api/availability",
@@ -202,7 +202,7 @@ def test_suspended_shop_cannot_create_appointments(client: TestClient) -> None:
         },
     )
     assert booking_response.status_code == 403
-    assert booking_response.json()["detail"] == "Barber shop access is suspended"
+    assert booking_response.json()["detail"] == "El acceso del negocio esta suspendido."
 
     activate_response = client.post(f"/api/barber-shops/{shop_id}/activate")
     assert activate_response.status_code == 200
