@@ -1689,12 +1689,11 @@ def bot_webhook(
     payload: BotWebhookRequest,
     session: Session = Depends(get_db),
 ) -> dict:
-    if not settings.bot_webhook_secret:
+    configured_secret = str(settings.bot_webhook_secret or "")
+    if not configured_secret:
         raise HTTPException(status_code=HTTPStatus.SERVICE_UNAVAILABLE, detail="Webhook is not configured")
-    if not hmac.compare_digest(
-        request.headers.get("X-TurnoFlow-Webhook-Secret", ""),
-        settings.bot_webhook_secret,
-    ):
+    provided_secret = request.headers.get("X-TurnoFlow-Webhook-Secret") or ""
+    if not hmac.compare_digest(provided_secret.encode("utf-8"), configured_secret.encode("utf-8")):
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="Invalid webhook secret")
     business_number = payload.to_business_number.strip()
     if is_rate_limited(
