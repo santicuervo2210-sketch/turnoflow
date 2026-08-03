@@ -139,6 +139,38 @@ postgresql://postgres:...@db.fyyycgvjqfitvpalwvkn.supabase.co:5432/postgres
 
 Supabase indica que la conexion directa es ideal para servidores persistentes, pero usa IPv6 salvo que el proyecto tenga add-on IPv4. Si el proveedor de deploy no soporta IPv6, usar el pooler de sesion desde el panel `Connect`.
 
+## Pasos en Vercel
+
+Esta opcion sirve para publicar la demo rapido. Vercel corre FastAPI como funciones serverless de Python, por eso el repo incluye:
+
+- `api/index.py`: expone `app.main.app`.
+- `vercel.json`: envia todas las rutas a `api/index.py`.
+- `requirements.txt`: dependencias que Vercel instala en build.
+
+Variables obligatorias en Vercel:
+
+```text
+APP_NAME=TurnoFlow
+ENVIRONMENT=production
+DATABASE_URL=postgresql://...
+AUTO_CREATE_TABLES=false
+AUTH_ENABLED=true
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=usar-la-clave-real
+SESSION_SECRET=usar-el-secret-real
+BOT_AI_PROVIDER=rules
+ERROR_ALERT_WEBHOOK_URL=
+LOGIN_RATE_LIMIT_PER_MINUTE=30
+BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE=120
+```
+
+Notas:
+
+- No uses SQLite en Vercel.
+- El bot por reglas y el webhook pueden responder cuando alguien escribe.
+- Los flujos con contexto en memoria pueden reiniciarse entre invocaciones serverless; para demo alcanza, pero para WhatsApp productivo conviene persistir el estado del bot en base de datos o usar un backend persistente.
+- Las migraciones Alembic ya fueron aplicadas en Supabase; si se agregan nuevas migraciones, correrlas antes de redeployar.
+
 ## Pasos en InsForge
 
 Estado actual de los proyectos creados desde CLI:
