@@ -54,6 +54,18 @@ AVAILABILITY_WORDS = (
 BOOKING_WORDS = ("reservar", "reservame", "reserva", "agendar", "agendame", "sacar turno", "sacame")
 CANCEL_WORDS = ("cancelar", "cancela", "cancelame", "dar de baja", "anular")
 RESCHEDULE_WORDS = ("reprogramar", "reprogramame", "mover", "cambiar", "pasar")
+APPOINTMENT_LOOKUP_WORDS = (
+    "a que hora",
+    "cuando",
+    "que dia",
+    "tenia",
+    "tengo",
+    "mis turnos",
+    "mi turno",
+    "recordame",
+    "recordar",
+    "confirmado",
+)
 WEEKDAY_NAMES = {
     0: "lunes",
     1: "martes",
@@ -321,6 +333,13 @@ def _customer_for_sender_phone(session: Session, barber_shop_id: int, from_phone
     return customer
 
 
+def _existing_customer_for_sender_phone(session: Session, barber_shop_id: int, from_phone: str) -> Customer | None:
+    phone = from_phone.strip()
+    return session.scalars(
+        select(Customer).where(Customer.barber_shop_id == barber_shop_id, Customer.phone == phone)
+    ).first()
+
+
 def _parse_target_date(message: str, today: date | None = None) -> date | None:
     today = today or date.today()
 
@@ -573,6 +592,59 @@ def _looks_like_cancel_request(message: str) -> bool:
 
 def _looks_like_reschedule_request(message: str) -> bool:
     return any(word in message for word in RESCHEDULE_WORDS)
+
+
+def _looks_like_appointment_lookup(message: str) -> bool:
+    return ("turno" in message or "reserva" in message) and any(word in message for word in APPOINTMENT_LOOKUP_WORDS)
+
+
+def _next_active_appointment_for_customer(session: Session, customer: Customer, barber_shop_id: int) -> Appointment | None:
+    upcoming_appointment = session.scalars(
+        select(Appointment).where(
+            Appointment.barber_shop_id == barber_shop_id,
+            Appointment.customer_id == customer.id,
+            Appointment.status.in_((AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)),
+            Appointment.starts_at >= datetime.now(),
+        ).order_by(Appointment.starts_at)
+    ).first()
+    if upcoming_appointment is not None:
+        return upcoming_appointment
+
+    return _latest_active_appointment_for_customer(session, customer, barber_shop_id)
+
+
+def _handle_appointment_lookup(
+    session: Session,
+    message: str,
+    barber_shop_id: int,
+    from_phone: str,
+    context: BotConversationContext | None = None,
+) -> BotMessages | None:
+    if not _looks_like_appointment_lookup(message):
+        return None
+
+    customer = _existing_customer_for_sender_phone(session, barber_shop_id, from_phone)
+    if customer is None:
+        return [("bot", "No encontre turnos activos asociados a este telefono.")]
+
+    appointment = _next_active_appointment_for_customer(session, customer, barber_shop_id)
+    if appointment is None:
+        return [("bot", "No encontre turnos activos asociados a este telefono.")]
+
+    if context is not None:
+        context.barber_shop_id = barber_shop_id
+        context.customer_id = customer.id
+        context.service_id = appointment.service_id
+        context.last_target_date = appointment.starts_at.date()
+
+    return [
+        (
+            "bot",
+            f"Tenes un turno #{appointment.id} el {_format_date(appointment.starts_at.date())} "
+            f"a las {appointment.starts_at:%H:%M} para {appointment.service.name} "
+            f"con {appointment.barber.name}.",
+        )
+    ]
 
 
 def _handle_cancel_request(
@@ -1001,6 +1073,10 @@ def process_bot_message(
     reschedule_answer = _handle_reschedule_request(session, normalized, barber_shop_id, from_phone, context)
     if reschedule_answer is not None:
         return reschedule_answer
+
+    appointment_lookup_answer = _handle_appointment_lookup(session, normalized, barber_shop_id, from_phone, context)
+    if appointment_lookup_answer is not None:
+        return appointment_lookup_answer
 
     booking_answer = _handle_booking_request(session, normalized, barber_shop_id, from_phone, context)
     if booking_answer is not None:

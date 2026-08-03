@@ -18,15 +18,28 @@
     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
       <div>
         <span class="stat-label">Negocios</span>
-        <h2 class="h5 mb-1">Acceso por cliente</h2>
+        <h2 class="h5 mb-1">Estado comercial por cliente</h2>
+        <p class="text-secondary small mb-0">Si un negocio no paga, suspendelo aca y pierde acceso al panel y al bot.</p>
       </div>
     </div>
     <div class="stack-list">
       {% for shop in shops %}
         <div class="mini-row shop-row">
           <div>
-            <strong>{{ shop.name }}</strong>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <strong>{{ shop.name }}</strong>
+              <span class="badge {% if shop.access_status == 'active' %}badge-access-active{% else %}badge-access-suspended{% endif %}">
+                {% if shop.access_status == "active" %}pago / activo{% else %}suspendido{% endif %}
+              </span>
+              <span class="badge text-bg-light border">plan {{ shop.plan }}</span>
+            </div>
             <div class="small text-secondary">{{ shop.phone or "Sin telefono" }} / {{ shop.address or "Sin direccion" }}</div>
+            {% if shop.suspension_reason %}
+              <div class="small text-danger">Motivo: {{ shop.suspension_reason }}</div>
+            {% endif %}
+            {% if shop.suspended_at %}
+              <div class="small text-secondary">Suspendido: {{ shop.suspended_at.strftime("%Y-%m-%d %H:%M") }}</div>
+            {% endif %}
             <div class="team-pills">
               {% for user in users if user.barber_shop_id == shop.id %}
                 <span>{{ user.username }} / {{ user.role }}</span>

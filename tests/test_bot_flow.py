@@ -527,6 +527,28 @@ def test_bot_can_reschedule_and_cancel_active_appointment(client: TestClient) ->
     assert appointments_after_cancel[0]["status"] == "cancelled"
 
 
+def test_bot_answers_next_appointment_for_sender_phone(client: TestClient) -> None:
+    _create_bot_demo_data(client)
+    sender_phone = "+5491133333333"
+
+    booking_response = client.post(
+        "/bot-simulator/message",
+        data={"from_phone": sender_phone, "message": "reservame corte el 2026-08-01 a las 09:00"},
+    )
+    assert booking_response.status_code == 200
+    assert "te confirme el turno" in booking_response.text
+
+    lookup_response = client.post(
+        "/bot-simulator/message",
+        data={"from_phone": sender_phone, "message": "hola a que hora tenia turno?"},
+    )
+
+    assert lookup_response.status_code == 200
+    assert "Tenes un turno" in lookup_response.text
+    assert "a las 09:00" in lookup_response.text
+    assert "para Corte" in lookup_response.text
+
+
 def test_bot_does_not_show_occupied_slot(client: TestClient) -> None:
     barber_id, customer_id, service_id = _create_bot_demo_data(client)
     client.post(

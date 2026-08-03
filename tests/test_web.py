@@ -751,6 +751,29 @@ def test_admin_can_suspend_and_activate_shop(client: TestClient) -> None:
     assert client.get("/api/barber-shops").json()[0]["access_status"] == "active"
 
 
+def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
+    shop_response = client.post("/api/barber-shops", json={"name": "Pago Demo"})
+    shop_id = shop_response.json()["id"]
+
+    owner_response = client.get("/owner")
+    assert owner_response.status_code == 200
+    assert "Estado comercial por cliente" in owner_response.text
+    assert "Pago Demo" in owner_response.text
+    assert "pago / activo" in owner_response.text
+    assert "plan basic" in owner_response.text
+
+    suspend_response = client.post(
+        f"/admin/barber-shops/{shop_id}/suspend",
+        data={"reason": "Pago vencido"},
+        follow_redirects=False,
+    )
+    assert suspend_response.status_code == 303
+
+    suspended_owner_response = client.get("/owner")
+    assert "suspendido" in suspended_owner_response.text
+    assert "Motivo: Pago vencido" in suspended_owner_response.text
+
+
 def test_admin_cancel_shows_released_slot_notice(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Cancel Notice Demo"})
     shop_id = shop_response.json()["id"]
