@@ -1166,6 +1166,44 @@ textarea {
   cursor: pointer;
 }
 
+.tf-agenda-sections {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.tf-agenda-group {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.tf-group-heading {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.tf-group-heading h3 {
+  font-size: 1rem;
+  font-weight: 900;
+  margin: 0;
+}
+
+.tf-group-heading span {
+  background: #f3f5fb;
+  border-radius: 999px;
+  color: #66728a;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.4rem 0.75rem;
+  white-space: nowrap;
+}
+
+.empty-state.compact {
+  padding: 0.8rem 1rem;
+}
+
 @media (max-width: 1199.98px) {
   .tf-workspace {
     grid-template-columns: 154px minmax(0, 1fr);

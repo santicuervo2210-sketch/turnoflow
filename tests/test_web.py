@@ -26,12 +26,26 @@ def test_admin_modules_render_only_selected_content(client: TestClient) -> None:
     services_response = client.get("/admin?module=servicios")
 
     assert agenda_response.status_code == 200
-    assert "Agenda de hoy y proximos" in agenda_response.text
+    assert "Agenda del negocio" in agenda_response.text
     assert "Precios, duracion y oferta" not in agenda_response.text
 
     assert services_response.status_code == 200
     assert "Precios, duracion y oferta" in services_response.text
-    assert "Agenda de hoy y proximos" not in services_response.text
+    assert "Agenda del negocio" not in services_response.text
+
+
+def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestClient) -> None:
+    agenda_response = client.get("/admin")
+    rendimiento_response = client.get("/admin?module=rendimiento")
+
+    assert agenda_response.status_code == 200
+    assert "Total generado del dia" in agenda_response.text
+    assert "action=\"/admin/supply-sales\"" in agenda_response.text
+
+    assert rendimiento_response.status_code == 200
+    assert "Historial y caja" in rendimiento_response.text
+    assert "Ingresos extra registrados" in rendimiento_response.text
+    assert "action=\"/admin/supply-sales\"" not in rendimiento_response.text
 
 
 def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> None:

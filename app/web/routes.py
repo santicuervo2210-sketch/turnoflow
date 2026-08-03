@@ -209,25 +209,55 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             appointments_query.order_by(Appointment.starts_at).offset((page - 1) * per_page).limit(per_page)
         ).all()
     )
+    agenda_appointments = list(
+        session.scalars(
+            _shop_filter(select(Appointment).order_by(Appointment.starts_at), shop_id, Appointment)
+        ).all()
+    )
     supply_sales = list(
         session.scalars(_shop_filter(select(SupplySale).order_by(SupplySale.id), shop_id, SupplySale)).all()
     )
     now = datetime.now()
+    today = now.date()
+    tomorrow = today + timedelta(days=1)
+    agenda_source_appointments = appointments if start_date is not None or end_date is not None else agenda_appointments
     active_appointments = [
         appointment
-        for appointment in appointments
+        for appointment in agenda_source_appointments
         if appointment.status in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
         and appointment.starts_at >= now
     ]
-    appointment_history = [appointment for appointment in appointments if appointment not in active_appointments]
-    paid_appointments = [appointment for appointment in appointments if appointment.is_paid]
+    active_appointment_ids = {appointment.id for appointment in active_appointments}
+    agenda_today_appointments = [appointment for appointment in active_appointments if appointment.starts_at.date() == today]
+    agenda_tomorrow_appointments = [
+        appointment for appointment in active_appointments if appointment.starts_at.date() == tomorrow
+    ]
+    agenda_upcoming_appointments = [
+        appointment for appointment in active_appointments if appointment.starts_at.date() > tomorrow
+    ]
+    appointment_history = [
+        appointment for appointment in agenda_source_appointments if appointment.id not in active_appointment_ids
+    ]
+    today_start = datetime.combine(today, time.min)
+    today_end = datetime.combine(today, time.max)
+    today_supply_sales = [
+        sale
+        for sale in supply_sales
+        if sale.created_at is not None and today_start <= sale.created_at.replace(tzinfo=None) <= today_end
+    ]
+    paid_appointments = [appointment for appointment in agenda_appointments if appointment.is_paid]
+    paid_today_appointments = [
+        appointment
+        for appointment in paid_appointments
+        if appointment.paid_at is not None and today_start <= appointment.paid_at.replace(tzinfo=None) <= today_end
+    ]
     completed_paid_appointments = [
         appointment
-        for appointment in appointments
+        for appointment in agenda_appointments
         if appointment.status == AppointmentStatus.COMPLETED.value and appointment.is_paid
     ]
     cancelled_appointments = [
-        appointment for appointment in appointments if appointment.status == AppointmentStatus.CANCELLED.value
+        appointment for appointment in agenda_appointments if appointment.status == AppointmentStatus.CANCELLED.value
     ]
     appointment_revenue = sum(
         appointment.service.price
@@ -250,6 +280,12 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         if appointment.service is not None
     )
     supply_revenue = sum(sale.total_price for sale in supply_sales)
+    today_appointment_revenue = sum(
+        appointment.service.price
+        for appointment in paid_today_appointments
+        if appointment.service is not None
+    )
+    today_supply_revenue = sum(sale.total_price for sale in today_supply_sales)
     context = {
         "request": request,
         "now": now,
@@ -281,8 +317,12 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         ),
         "appointments": appointments,
         "active_appointments": active_appointments,
+        "agenda_today_appointments": agenda_today_appointments,
+        "agenda_tomorrow_appointments": agenda_tomorrow_appointments,
+        "agenda_upcoming_appointments": agenda_upcoming_appointments,
         "appointment_history": appointment_history,
         "supply_sales": supply_sales,
+        "today_supply_sales": today_supply_sales,
         "bot_settings_by_shop": {shop.id: get_or_create_bot_settings(session, shop.id) for shop in shops},
         "pending_reminders": [
             reminder
@@ -315,6 +355,9 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             "active_expected_revenue": active_expected_revenue,
             "cancelled_value": cancelled_value,
             "supply_revenue": supply_revenue,
+            "today_appointment_revenue": today_appointment_revenue,
+            "today_supply_revenue": today_supply_revenue,
+            "today_total_revenue": today_appointment_revenue + today_supply_revenue,
         },
     }
     context.update(extra)

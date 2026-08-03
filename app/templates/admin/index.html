@@ -2,6 +2,60 @@
 
 {% block content %}
 {% set current_module = selected_module or "agenda" %}
+{% macro appointment_row(appointment, csrf_token, show_actions=True) %}
+  <details class="tf-schedule-row {% if appointment.is_paid %}is-paid{% elif appointment.status == 'pending' %}is-pending{% else %}is-confirmed{% endif %}">
+    <summary>
+      <span class="tf-schedule-time">{{ appointment.starts_at.strftime("%H:%M") }}</span>
+      <span class="tf-schedule-pill">
+        <strong>{{ appointment.customer.full_name }}</strong>
+        <span>{{ appointment.service.name }}</span>
+      </span>
+      <span class="tf-schedule-state">{{ appointment.status }}{% if appointment.is_paid %} / pagado{% endif %}</span>
+      <span class="tf-detail-button">Ver detalle</span>
+    </summary>
+    <div class="tf-schedule-detail">
+      <div>
+        <strong>{{ appointment.starts_at.strftime("%H:%M") }} - {{ appointment.customer.full_name }}</strong>
+        <p>{{ appointment.starts_at.strftime("%Y-%m-%d") }} / {{ appointment.service.name }} con {{ appointment.barber.name }} / ${{ appointment.service.price }} / {{ appointment.service.duration_minutes }} min</p>
+      </div>
+      {% if show_actions %}
+        <div class="tf-appointment-actions">
+          {% if appointment.status == 'pending' %}
+            <form action="/admin/appointments/{{ appointment.id }}/confirm" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-success" type="submit">Confirmar</button>
+            </form>
+          {% endif %}
+          {% if appointment.is_paid %}
+            <form action="/admin/appointments/{{ appointment.id }}/unpaid" method="post">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-warning" type="submit">Impago</button>
+            </form>
+          {% else %}
+            <form action="/admin/appointments/{{ appointment.id }}/paid" method="post" class="tf-inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input class="form-control form-control-sm" name="payment_method" placeholder="Efectivo">
+              <button class="btn btn-sm btn-outline-success" type="submit">Cobrar</button>
+            </form>
+          {% endif %}
+          <form action="/admin/appointments/{{ appointment.id }}/complete" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-success" type="submit">Completar</button>
+          </form>
+          <form action="/admin/appointments/{{ appointment.id }}/cancel" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button class="btn btn-sm btn-outline-danger" type="submit">Cancelar</button>
+          </form>
+          <form action="/admin/appointments/{{ appointment.id }}/reschedule" method="post" class="tf-inline-form tf-move-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input class="form-control form-control-sm" type="datetime-local" name="starts_at" required>
+            <button class="btn btn-sm btn-outline-secondary" type="submit">Mover</button>
+          </form>
+        </div>
+      {% endif %}
+    </div>
+  </details>
+{% endmacro %}
 <div class="tf-workspace">
   <aside class="tf-sidebar" aria-label="Modulos de gestion">
     <a class="tf-sidebar-brand" href="/admin">TurnoFlow</a>
@@ -93,88 +147,144 @@
       <div class="tf-panel-head tf-agenda-heading">
         <div>
           <span class="stat-label">Operacion diaria</span>
-          <h2>Agenda de hoy y proximos</h2>
-          <p>Confirmados y pendientes quedan arriba. Si alguien llama o escribe por fuera del bot, creas el turno desde aca.</p>
+          <h2>Agenda del negocio</h2>
+          <p>Hoy primero, despues manana, proximos e historial. Si alguien llama o escribe por fuera del bot, creas el turno desde aca.</p>
         </div>
         <span class="tf-count-pill">{{ stats.active_appointments }} turno{% if stats.active_appointments != 1 %}s{% endif %}</span>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Agregar turno</button>
       </div>
 
-      <div class="tf-schedule-list" aria-label="Agenda activa">
-        {% for appointment in active_appointments %}
-          <details class="tf-schedule-row {% if appointment.is_paid %}is-paid{% elif appointment.status == 'pending' %}is-pending{% else %}is-confirmed{% endif %}">
-            <summary>
-              <span class="tf-schedule-time">{{ appointment.starts_at.strftime("%H:%M") }}</span>
-              <span class="tf-schedule-pill">
-                <strong>{{ appointment.customer.full_name }}</strong>
-                <span>{{ appointment.service.name }}</span>
-              </span>
-              <span class="tf-schedule-state">{{ appointment.status }}{% if appointment.is_paid %} / pagado{% endif %}</span>
-              <span class="tf-detail-button">Ver detalle</span>
-            </summary>
-            <div class="tf-schedule-detail">
-              <div>
-                <strong>{{ appointment.starts_at.strftime("%H:%M") }} - {{ appointment.customer.full_name }}</strong>
-                <p>{{ appointment.starts_at.strftime("%Y-%m-%d") }} / {{ appointment.service.name }} con {{ appointment.barber.name }} / ${{ appointment.service.price }} / {{ appointment.service.duration_minutes }} min</p>
-              </div>
-              <div class="tf-appointment-actions">
-                {% if appointment.status == 'pending' %}
-                  <form action="/admin/appointments/{{ appointment.id }}/confirm" method="post">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button class="btn btn-sm btn-outline-success" type="submit">Confirmar</button>
-                  </form>
-                {% endif %}
-                {% if appointment.is_paid %}
-                  <form action="/admin/appointments/{{ appointment.id }}/unpaid" method="post">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <button class="btn btn-sm btn-outline-warning" type="submit">Impago</button>
-                  </form>
-                {% else %}
-                  <form action="/admin/appointments/{{ appointment.id }}/paid" method="post" class="tf-inline-form">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                    <input class="form-control form-control-sm" name="payment_method" placeholder="Efectivo">
-                    <button class="btn btn-sm btn-outline-success" type="submit">Cobrar</button>
-                  </form>
-                {% endif %}
-                <form action="/admin/appointments/{{ appointment.id }}/complete" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="btn btn-sm btn-success" type="submit">Completar</button>
-                </form>
-                <form action="/admin/appointments/{{ appointment.id }}/cancel" method="post">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Cancelar</button>
-                </form>
-                <form action="/admin/appointments/{{ appointment.id }}/reschedule" method="post" class="tf-inline-form tf-move-form">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <input class="form-control form-control-sm" type="datetime-local" name="starts_at" required>
-                  <button class="btn btn-sm btn-outline-secondary" type="submit">Mover</button>
-                </form>
-              </div>
-            </div>
-          </details>
-        {% else %}
-          <div class="empty-state">
-            <h3 class="h5 mb-1">Sin turnos activos</h3>
-            <p class="text-secondary mb-0">Crea un turno manual o deja que el bot lo confirme.</p>
+      <div class="tf-agenda-sections">
+        <div class="tf-agenda-group">
+          <div class="tf-group-heading">
+            <h3>Hoy</h3>
+            <span>{{ agenda_today_appointments|length }} turno{% if agenda_today_appointments|length != 1 %}s{% endif %}</span>
           </div>
-        {% endfor %}
+          <div class="tf-schedule-list" aria-label="Agenda de hoy">
+            {% for appointment in agenda_today_appointments %}
+              {{ appointment_row(appointment, csrf_token) }}
+            {% else %}
+              <div class="empty-state compact">Hoy no hay turnos activos.</div>
+            {% endfor %}
+          </div>
+        </div>
 
-        {% for block in time_blocks[:4] %}
-          <div class="tf-schedule-row is-blocked">
-            <div class="tf-schedule-static">
-              <span class="tf-schedule-time">{{ block.starts_at.strftime("%H:%M") }}</span>
-              <span class="tf-schedule-pill">
-                <strong>Bloqueado</strong>
-                <span>{{ block.reason or "No disponible" }}</span>
-              </span>
-              <span class="tf-schedule-state">{{ block.ends_at.strftime("%H:%M") }}</span>
-              <form action="/admin/time-blocks/{{ block.id }}/deactivate" method="post">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="tf-detail-button border-0" type="submit">Liberar</button>
-              </form>
+        <div class="tf-agenda-group">
+          <div class="tf-group-heading">
+            <h3>Manana</h3>
+            <span>{{ agenda_tomorrow_appointments|length }} turno{% if agenda_tomorrow_appointments|length != 1 %}s{% endif %}</span>
+          </div>
+          <div class="tf-schedule-list" aria-label="Agenda de manana">
+            {% for appointment in agenda_tomorrow_appointments %}
+              {{ appointment_row(appointment, csrf_token) }}
+            {% else %}
+              <div class="empty-state compact">Manana esta libre por ahora.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="tf-agenda-group">
+          <div class="tf-group-heading">
+            <h3>Proximos turnos</h3>
+            <span>{{ agenda_upcoming_appointments|length }} futuro{% if agenda_upcoming_appointments|length != 1 %}s{% endif %}</span>
+          </div>
+          <div class="tf-schedule-list" aria-label="Proximos turnos">
+            {% for appointment in agenda_upcoming_appointments[:12] %}
+              {{ appointment_row(appointment, csrf_token) }}
+            {% else %}
+              <div class="empty-state compact">No hay turnos futuros despues de manana.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="tf-agenda-group">
+          <div class="tf-group-heading">
+            <h3>Historial / pasados</h3>
+            <span>{{ appointment_history|length }} registro{% if appointment_history|length != 1 %}s{% endif %}</span>
+          </div>
+          <div class="tf-schedule-list" aria-label="Historial de turnos pasados">
+            {% for appointment in appointment_history|reverse %}
+              {{ appointment_row(appointment, csrf_token, False) }}
+            {% else %}
+              <div class="empty-state compact">Todavia no hay turnos pasados, cancelados o completados.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if time_blocks %}
+          <div class="tf-agenda-group">
+            <div class="tf-group-heading">
+              <h3>Bloqueos activos</h3>
+              <span>{{ time_blocks|length }} bloqueo{% if time_blocks|length != 1 %}s{% endif %}</span>
+            </div>
+            <div class="tf-schedule-list" aria-label="Bloqueos activos">
+              {% for block in time_blocks[:6] %}
+                <div class="tf-schedule-row is-blocked">
+                  <div class="tf-schedule-static">
+                    <span class="tf-schedule-time">{{ block.starts_at.strftime("%H:%M") }}</span>
+                    <span class="tf-schedule-pill">
+                      <strong>Bloqueado</strong>
+                      <span>{{ block.reason or "No disponible" }}</span>
+                    </span>
+                    <span class="tf-schedule-state">{{ block.ends_at.strftime("%H:%M") }}</span>
+                    <form action="/admin/time-blocks/{{ block.id }}/deactivate" method="post">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button class="tf-detail-button border-0" type="submit">Liberar</button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
             </div>
           </div>
-        {% endfor %}
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="tf-panel" id="agenda-caja">
+      <div class="tf-panel-head">
+        <div>
+          <span class="stat-label">Caja diaria</span>
+          <h2>Total generado del dia</h2>
+          <p>Registra insumos, extras, senas o cualquier ingreso de mostrador sin salir de Agenda.</p>
+        </div>
+      </div>
+      <div class="tf-money-grid">
+        <div><span>Turnos cobrados hoy</span><strong>${{ stats.today_appointment_revenue }}</strong></div>
+        <div><span>Extras de hoy</span><strong>${{ stats.today_supply_revenue }}</strong></div>
+        <div><span>Total generado hoy</span><strong>${{ stats.today_total_revenue }}</strong></div>
+      </div>
+      <form action="/admin/supply-sales" method="post" class="tf-filter-bar mt-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <select class="form-select" name="barber_shop_id" required>
+          {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
+        </select>
+        <select class="form-select" name="appointment_id">
+          <option value="">Ingreso sin turno</option>
+          {% for appointment in active_appointments %}<option value="{{ appointment.id }}">#{{ appointment.id }} - {{ appointment.customer.full_name }}</option>{% endfor %}
+        </select>
+        <input class="form-control" name="name" placeholder="Insumo, extra, sena, producto..." required>
+        <input class="form-control" type="number" min="1" name="quantity" placeholder="Cantidad" required>
+        <input class="form-control" type="number" min="0" step="0.01" name="unit_price" placeholder="Importe" required>
+        <button class="btn btn-primary" type="submit">Registrar ingreso</button>
+      </form>
+      <div class="tf-table-wrap mt-3">
+        <table class="table table-sm align-middle mobile-stack-table">
+          <thead>
+            <tr><th>Ingreso</th><th>Cantidad</th><th>Total</th><th>Origen</th></tr>
+          </thead>
+          <tbody>
+            {% for sale in today_supply_sales|reverse %}
+              <tr>
+                <td data-label="Ingreso">{{ sale.name }}</td>
+                <td data-label="Cantidad">{{ sale.quantity }} x ${{ sale.unit_price }}</td>
+                <td data-label="Total" class="fw-semibold">${{ sale.total_price }}</td>
+                <td data-label="Origen">{% if sale.appointment_id %}Turno #{{ sale.appointment_id }}{% else %}Mostrador{% endif %}</td>
+              </tr>
+            {% else %}
+              <tr><td class="text-secondary" colspan="4">Sin ingresos extra registrados hoy.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
     </section>
     {% elif current_module == "clientes" %}
@@ -426,23 +536,10 @@
         <div class="tf-panel-head compact">
           <div>
             <span class="stat-label">Ventas extra</span>
-            <h3>Insumos vendidos</h3>
+            <h3>Ingresos extra registrados</h3>
+            <p>Solo lectura. Las ventas, senas o extras se registran desde Agenda.</p>
           </div>
         </div>
-        <form action="/admin/supply-sales" method="post" class="tf-filter-bar">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <select class="form-select" name="barber_shop_id" required>
-            {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
-          </select>
-          <select class="form-select" name="appointment_id">
-            <option value="">Sin turno</option>
-            {% for appointment in appointments %}<option value="{{ appointment.id }}">#{{ appointment.id }} - {{ appointment.customer.full_name }}</option>{% endfor %}
-          </select>
-          <input class="form-control" name="name" placeholder="Pomada, shampoo, etc." required>
-          <input class="form-control" type="number" min="1" name="quantity" placeholder="Cantidad" required>
-          <input class="form-control" type="number" min="0" step="0.01" name="unit_price" placeholder="Precio" required>
-          <button class="btn btn-primary" type="submit">Registrar</button>
-        </form>
       </div>
 
       <div class="tf-table-wrap mt-3">
