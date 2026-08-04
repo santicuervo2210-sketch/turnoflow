@@ -12,6 +12,13 @@
       <div class="container-fluid px-4">
         <a class="navbar-brand fw-bold" href="/admin">TurnoFlow</a>
         <div class="navbar-nav flex-row gap-2">
+          {% if is_previewing_business %}
+            <span class="navbar-text badge text-bg-warning align-self-center">Vista cliente</span>
+            <form action="/owner/return" method="post" class="d-flex align-items-center">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm btn-outline-primary" type="submit">Volver a super admin</button>
+            </form>
+          {% endif %}
           {% if is_owner_view %}
             <a class="nav-link" href="/owner">Owner</a>
           {% endif %}
@@ -20,7 +27,7 @@
           {% if is_owner_view %}
             <a class="nav-link" href="/docs">API</a>
           {% endif %}
-          {% if current_user %}
+          {% if current_user or is_owner_view or is_previewing_business %}
             <a class="nav-link" href="/logout">Salir</a>
           {% endif %}
         </div>

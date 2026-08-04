@@ -202,6 +202,69 @@ def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch)
     assert "Servicio propio" in client.get("/admin").text
 
 
+def test_owner_can_preview_business_user_and_return_without_password(client: TestClient, monkeypatch) -> None:
+    shop_one_id = client.post("/api/barber-shops", json={"name": "Negocio para probar"}).json()["id"]
+    shop_two_id = client.post("/api/barber-shops", json={"name": "Negocio privado"}).json()["id"]
+    client.post(
+        "/owner/users",
+        data={
+            "username": "usuario_prueba",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_one_id),
+        },
+        follow_redirects=False,
+    )
+
+    monkeypatch.setattr(settings, "auth_enabled", True)
+    monkeypatch.setattr(settings, "admin_username", "owner")
+    monkeypatch.setattr(settings, "admin_password", "secret")
+    monkeypatch.setattr(settings, "session_secret", "test-secret-for-owner-preview")
+
+    owner_login = client.post(
+        "/login",
+        data={"username": "owner", "password": "secret", "next_path": "/owner"},
+        follow_redirects=False,
+    )
+    assert owner_login.status_code == 303
+    owner_page = client.get("/owner")
+    assert "Probar como cliente" in owner_page.text
+    assert "Salir" in owner_page.text
+
+    owner_csrf_token = _csrf_token_from(client, "/owner")
+    preview_response = client.post(
+        "/owner/users/1/impersonate",
+        data={"csrf_token": owner_csrf_token},
+        follow_redirects=False,
+    )
+
+    assert preview_response.status_code == 303
+    assert preview_response.headers["location"] == "/admin?module=agenda"
+    preview_page = client.get("/admin")
+    assert preview_page.status_code == 200
+    assert "Vista cliente" in preview_page.text
+    assert "Volver a super admin" in preview_page.text
+    assert "Negocio para probar" in preview_page.text
+    assert "Negocio privado" not in preview_page.text
+    assert ">Owner<" not in preview_page.text
+    assert client.get("/api/barber-shops").status_code == 403
+
+    preview_csrf_token = _csrf_token_from(client, "/admin")
+    return_response = client.post(
+        "/owner/return",
+        data={"csrf_token": preview_csrf_token},
+        follow_redirects=False,
+    )
+
+    assert return_response.status_code == 303
+    assert return_response.headers["location"] == "/owner"
+    restored_owner_page = client.get("/owner")
+    assert restored_owner_page.status_code == 200
+    assert "Negocio para probar" in restored_owner_page.text
+    assert "Negocio privado" in restored_owner_page.text
+    assert "Vista cliente" not in restored_owner_page.text
+
+
 def test_business_admin_error_response_does_not_leak_other_shop(client: TestClient, monkeypatch) -> None:
     shop_one = client.post("/api/barber-shops", json={"name": "Error Uno"}).json()
     shop_two = client.post("/api/barber-shops", json={"name": "Error Dos"}).json()
@@ -1403,6 +1466,14 @@ def test_appointment_form_accepts_thirty_minute_duration(client: TestClient) -> 
         response.text,
     )
     assert duration_input is not None
+
+
+def test_appointment_form_hides_new_customer_fields_for_existing_customer(client: TestClient) -> None:
+    response = client.get("/admin")
+
+    assert response.text.count("data-new-customer-field") == 3
+    assert "const syncCustomerMode" in response.text
+    assert "input.disabled = !isCreatingCustomer" in response.text
 
 
 def test_owner_can_manage_one_shop_without_mixing_other_shop_data(client: TestClient) -> None:

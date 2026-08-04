@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.models import User, UserRole
 
 SESSION_COOKIE_NAME = "turnoflow_session"
+OWNER_RETURN_COOKIE_NAME = "turnoflow_owner_return"
 CSRF_COOKIE_NAME = "turnoflow_csrf"
 CSRF_FORM_FIELD = "csrf_token"
 PROTECTED_PATH_PREFIXES = (
@@ -140,6 +141,21 @@ def set_session_cookie(response: Response, subject: str) -> None:
     )
 
 
+def set_owner_return_cookie(response: Response, owner_session_cookie: str) -> None:
+    response.set_cookie(
+        OWNER_RETURN_COOKIE_NAME,
+        owner_session_cookie,
+        httponly=True,
+        secure=settings.environment == "production",
+        samesite="lax",
+        max_age=60 * 60,
+    )
+
+
+def clear_owner_return_cookie(response: Response) -> None:
+    response.delete_cookie(OWNER_RETURN_COOKIE_NAME)
+
+
 def set_csrf_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         CSRF_COOKIE_NAME,
@@ -153,6 +169,7 @@ def set_csrf_cookie(response: Response, token: str) -> None:
 
 def clear_session_cookie(response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE_NAME)
+    clear_owner_return_cookie(response)
     response.delete_cookie(CSRF_COOKIE_NAME)
 
 

@@ -53,13 +53,16 @@ from app.services.supply_sales import create_supply_sale
 from app.services.users import authenticate_user, create_password_reset_token, create_user, reset_password_with_token
 from app.schemas.business import BotWebhookRequest, BotWebhookResponse
 from app.web.auth import (
+    OWNER_RETURN_COOKIE_NAME,
     SESSION_COOKIE_NAME,
+    clear_owner_return_cookie,
     clear_session_cookie,
     csrf_token_for_request,
     parse_session_subject,
     session_subject_for_env_owner,
     session_subject_for_user,
     set_csrf_cookie,
+    set_owner_return_cookie,
     set_session_cookie,
     validate_admin_credentials,
 )
@@ -118,6 +121,13 @@ def _current_user(request: Request, session: Session) -> User | None:
     if user is None or not user.is_active:
         return None
     return user
+
+
+def _owner_return_subject(request: Request) -> str | None:
+    subject = parse_session_subject(request.cookies.get(OWNER_RETURN_COOKIE_NAME))
+    if subject is None or not subject.endswith(f":{UserRole.OWNER.value}"):
+        return None
+    return subject
 
 
 def _managed_shop_cookie_value(barber_shop_id: int) -> str:
@@ -422,6 +432,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "selected_module": _admin_module_param(request),
         "current_user": _current_user(request, session),
         "is_owner_view": _is_owner_request(request, session) or not settings.auth_enabled,
+        "is_previewing_business": _owner_return_subject(request) is not None,
         "managed_shop": shops[0] if shop_id is not None and shops and _is_owner_request(request, session) else None,
         "stats": {
             "shops": len(shops),
@@ -686,6 +697,7 @@ def login_submit(
 
     if validate_admin_credentials(username, password):
         response = _redirect_to(_safe_next_path(next_path))
+        clear_owner_return_cookie(response)
         set_session_cookie(response, session_subject_for_env_owner(username))
         return response
 
@@ -703,6 +715,7 @@ def login_submit(
         )
 
     response = _redirect_to(_safe_next_path(next_path))
+    clear_owner_return_cookie(response)
     set_session_cookie(response, session_subject_for_user(user))
     return response
 
@@ -831,6 +844,50 @@ def owner_create_password_reset_link(
 
     token = create_password_reset_token(user)
     return {"reset_url": f"/password-reset?token={token}"}
+
+
+@router.post("/owner/users/{user_id}/impersonate")
+def owner_impersonate_business_user(
+    request: Request,
+    user_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+
+    user = session.get(User, user_id)
+    owner_session_cookie = request.cookies.get(SESSION_COOKIE_NAME)
+    owner_subject = parse_session_subject(owner_session_cookie)
+    if (
+        user is None
+        or not user.is_active
+        or user.role != UserRole.BUSINESS_ADMIN.value
+        or user.barber_shop is None
+        or user.barber_shop.access_status != "active"
+        or owner_session_cookie is None
+        or owner_subject is None
+        or not owner_subject.endswith(f":{UserRole.OWNER.value}")
+    ):
+        return _redirect_to("/owner")
+
+    response = _redirect_to("/admin?module=agenda")
+    set_owner_return_cookie(response, owner_session_cookie)
+    set_session_cookie(response, session_subject_for_user(user))
+    response.delete_cookie(OWNER_MANAGED_SHOP_COOKIE)
+    return response
+
+
+@router.post("/owner/return")
+def return_to_owner(request: Request) -> RedirectResponse:
+    owner_subject = _owner_return_subject(request)
+    if owner_subject is None:
+        return _redirect_to("/admin")
+
+    response = _redirect_to("/owner")
+    set_session_cookie(response, owner_subject)
+    clear_owner_return_cookie(response)
+    return response
 
 
 @router.get("/owner/users/{user_id}/password-reset")

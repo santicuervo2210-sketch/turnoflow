@@ -728,11 +728,11 @@
                 {% for customer in customers %}<option value="{{ customer.id }}" data-shop-id="{{ customer.barber_shop_id }}">{{ customer.full_name }} - {{ customer.phone }}</option>{% endfor %}
               </select>
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6" data-new-customer-field>
               <label class="form-label">Nombre nuevo cliente</label>
               <input class="form-control" name="new_customer_name" placeholder="Si no esta en la lista">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-6" data-new-customer-field>
               <label class="form-label">Telefono nuevo cliente</label>
               <input class="form-control" name="new_customer_phone" placeholder="Telefono opcional">
             </div>
@@ -1020,6 +1020,7 @@
     const barberSelect = form.querySelector('[name="barber_id"]');
     const serviceSelect = form.querySelector('[name="service_id"]');
     const customerSelect = form.querySelector('[name="customer_id"]');
+    const newCustomerFields = Array.from(form.querySelectorAll("[data-new-customer-field]"));
     const newCustomerOption = customerSelect?.options[0];
     const compatibilityHelp = document.getElementById("appointmentCompatibilityHelp");
     const submitButton = form.querySelector('button[type="submit"]');
@@ -1072,15 +1073,28 @@
       }
     };
 
+    const syncCustomerMode = () => {
+      const isCreatingCustomer = !customerSelect?.value;
+      newCustomerFields.forEach((field) => {
+        field.hidden = !isCreatingCustomer;
+        field.querySelectorAll("input").forEach((input) => {
+          input.disabled = !isCreatingCustomer;
+          if (!isCreatingCustomer) input.value = "";
+        });
+      });
+    };
+
     const syncAppointmentCatalog = () => {
       const shopId = shopSelect.value;
       filterByShop(serviceSelect, shopId);
       filterByShop(customerSelect, shopId);
       if (newCustomerOption) newCustomerOption.hidden = false;
+      syncCustomerMode();
       syncCompatibility();
     };
 
     shopSelect.addEventListener("change", syncAppointmentCatalog);
+    customerSelect?.addEventListener("change", syncCustomerMode);
     serviceSelect?.addEventListener("change", syncCompatibility);
     syncAppointmentCatalog();
   })();

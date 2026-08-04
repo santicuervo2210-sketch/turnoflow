@@ -7,7 +7,7 @@
     <div>
       <span class="stat-label">Owner</span>
       <h1 class="h3 mb-1">Clientes y accesos</h1>
-      <p class="text-secondary mb-0">Primero creas el negocio, despues el acceso del cliente. Los profesionales se cargan desde Equipo.</p>
+      <p class="text-secondary mb-0">Crea el acceso y usa Probar como cliente para revisar exactamente lo que vera cada negocio. Los profesionales se cargan desde Equipo.</p>
     </div>
     <div class="top-actions">
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
@@ -95,6 +95,10 @@
                 <div class="d-flex flex-wrap gap-2">
                   <a class="btn btn-sm btn-outline-secondary" href="/owner/users/{{ user.id }}/password-reset">Cambiar clave</a>
                   {% if user.role == "business_admin" and user.is_active %}
+                    <form action="/owner/users/{{ user.id }}/impersonate" method="post">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-primary" type="submit">Probar como cliente</button>
+                    </form>
                     <form action="/owner/users/{{ user.id }}/deactivate" method="post">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                       <button class="btn btn-sm btn-outline-warning" type="submit">Desactivar</button>
