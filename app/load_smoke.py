@@ -39,10 +39,10 @@ def summarize(results: list[RequestResult]) -> dict[str, float | int]:
     }
 
 
-def _request(url: str, timeout_seconds: float) -> RequestResult:
+def _request(client: httpx.Client, url: str) -> RequestResult:
     started_at = perf_counter()
     try:
-        response = httpx.get(url, timeout=timeout_seconds, follow_redirects=False)
+        response = client.get(url)
         return RequestResult((perf_counter() - started_at) * 1000, response.status_code)
     except httpx.HTTPError:
         return RequestResult((perf_counter() - started_at) * 1000, None)
@@ -60,13 +60,14 @@ def main() -> None:
     if args.requests <= 0 or args.concurrency <= 0:
         parser.error("requests y concurrency deben ser mayores a cero")
 
-    with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
-        results = list(
-            executor.map(
-                lambda _: _request(args.url, args.timeout),
-                range(args.requests),
+    with httpx.Client(timeout=args.timeout, follow_redirects=False) as client:
+        with ThreadPoolExecutor(max_workers=args.concurrency) as executor:
+            results = list(
+                executor.map(
+                    lambda _: _request(client, args.url),
+                    range(args.requests),
+                )
             )
-        )
     summary = summarize(results)
     print(
         "requests={requests} errors={errors} error_rate={error_rate:.2%} "
