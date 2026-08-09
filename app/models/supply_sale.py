@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -19,6 +19,7 @@ class SupplySale(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_supply_sales_quantity_positive"),
         CheckConstraint("unit_price >= 0", name="ck_supply_sales_unit_price_non_negative"),
+        Index("ix_supply_sales_shop_created_at", "barber_shop_id", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -38,4 +39,3 @@ class SupplySale(TimestampMixin, Base):
     @property
     def total_price(self) -> Decimal:
         return self.unit_price * self.quantity
-

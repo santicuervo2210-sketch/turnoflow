@@ -1,11 +1,14 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 import re
 
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models import Appointment, AppointmentStatus, Barber, BarberShop, Customer, Service
 import app.web.routes as web_routes
 
 
@@ -72,16 +75,59 @@ def test_admin_dashboard_keeps_database_round_trips_bounded(client: TestClient) 
         event.remove(Session, "do_orm_execute", count_selects)
 
     assert response.status_code == 200
-    assert select_count <= 10
+    assert select_count <= 14
+
+
+def test_dashboard_paginates_large_appointment_history_in_database(db_session: Session) -> None:
+    shop = BarberShop(name="Historial Grande")
+    service = Service(
+        barber_shop=shop,
+        name="Servicio",
+        duration_minutes=30,
+        price=Decimal("10000.00"),
+    )
+    barber = Barber(barber_shop=shop, name="Profesional")
+    customer = Customer(barber_shop=shop, full_name="Cliente")
+    db_session.add_all([shop, service, barber, customer])
+    db_session.flush()
+    starts_at = datetime(2025, 1, 1, 9, 0)
+    db_session.add_all(
+        Appointment(
+            barber_shop_id=shop.id,
+            barber_id=barber.id,
+            customer_id=customer.id,
+            service_id=service.id,
+            starts_at=starts_at + timedelta(days=index),
+            ends_at=starts_at + timedelta(days=index, minutes=30),
+            status=AppointmentStatus.COMPLETED.value,
+        )
+        for index in range(250)
+    )
+    db_session.commit()
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/admin",
+            "query_string": b"",
+            "headers": [],
+        }
+    )
+
+    context = web_routes._dashboard_context(request, db_session, shop_id=shop.id)
+
+    assert context["stats"]["appointments"] == 250
+    assert len(context["appointments"]) == 50
 
 
 def test_security_headers_are_present(client: TestClient) -> None:
-    response = client.get("/health")
+    response = client.get("/health", headers={"X-Request-ID": "browser-request-123"})
 
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert "camera=()" in response.headers["Permissions-Policy"]
+    assert response.headers["X-Request-ID"] == "browser-request-123"
 
 
 def test_admin_modules_load_once_and_only_selected_panel_is_visible(client: TestClient) -> None:

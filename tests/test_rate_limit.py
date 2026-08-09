@@ -46,9 +46,46 @@ def test_bot_webhook_rate_limit_rejects_too_many_messages(client: TestClient, mo
     assert second_response.status_code == 429
 
 
+def test_bot_webhook_rate_limit_is_isolated_by_business(client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "bot_webhook_rate_limit_per_minute", 1)
+    client.post("/api/barber-shops", json={"name": "Bot A", "phone": "+5491111111101"})
+    client.post("/api/barber-shops", json={"name": "Bot B", "phone": "+5491111111102"})
+    headers = {"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"}
+
+    response_a = client.post(
+        "/bot/webhook",
+        json={
+            "from_phone": "+5491122222222",
+            "to_business_number": "+5491111111101",
+            "message": "hola",
+        },
+        headers=headers,
+    )
+    response_b = client.post(
+        "/bot/webhook",
+        json={
+            "from_phone": "+5491122222222",
+            "to_business_number": "+5491111111102",
+            "message": "hola",
+        },
+        headers=headers,
+    )
+
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+
+
 def test_rate_limit_is_persisted_in_database(db_session: Session) -> None:
     now = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
 
     assert not is_rate_limited(db_session, "persistent-key", 1, now=now)
     db_session.expire_all()
     assert is_rate_limited(db_session, "persistent-key", 1, now=now)
+
+
+def test_rate_limit_resets_after_the_window(db_session: Session) -> None:
+    now = datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
+
+    assert not is_rate_limited(db_session, "window-key", 1, now=now)
+    assert is_rate_limited(db_session, "window-key", 1, now=now)
+    assert not is_rate_limited(db_session, "window-key", 1, now=now.replace(minute=1))

@@ -41,6 +41,10 @@ BOT_AI_PROVIDER=rules
 ERROR_ALERT_WEBHOOK_URL=
 LOGIN_RATE_LIMIT_PER_MINUTE=30
 BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE=120
+DATABASE_POOL_MODE=serverless
+CRON_SECRET=usar-un-tercer-secreto-aleatorio-de-32-caracteres-o-mas
+BOT_CONVERSATION_TTL_DAYS=30
+WEBHOOK_RECEIPT_TTL_DAYS=30
 ```
 
 Notas:
@@ -53,6 +57,8 @@ Notas:
 - `SESSION_SECRET` debe tener minimo 32 caracteres y no debe compartirse.
 - `ERROR_ALERT_WEBHOOK_URL` es opcional. Si lo configuras con un webhook HTTPS de un servicio externo, TurnoFlow enviara una alerta breve cuando ocurra un error 500. No se envian cookies, body, telefono ni query string; solo ambiente, metodo, path y tipo de excepcion.
 - `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` deben ser mayores a 0.
+- Usa `DATABASE_POOL_MODE=serverless` en Vercel y `persistent` solo en un servidor o contenedor permanente.
+- `CRON_SECRET` protege `/internal/maintenance`; Vercel lo envia automaticamente al cron diario.
 
 ## Comandos de build y arranque
 
@@ -74,7 +80,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260809_0012`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260809_0014`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -131,7 +137,7 @@ TurnoFlow quedo conectado a Supabase como PostgreSQL gestionado, sin usar todavi
 - Region: `sa-east-1`.
 - Dashboard: `https://supabase.com/dashboard/project/fyyycgvjqfitvpalwvkn`.
 - Estado verificado por CLI: `ACTIVE_HEALTHY`.
-- Revision Alembic aplicada y verificada: `20260809_0012`.
+- Revision Alembic aplicada y verificada: `20260809_0014` despues de ejecutar las migraciones de esta version.
 
 La variable `DATABASE_URL` local esta en `.env` y apunta a la conexion directa:
 
@@ -165,6 +171,10 @@ BOT_AI_PROVIDER=rules
 ERROR_ALERT_WEBHOOK_URL=
 LOGIN_RATE_LIMIT_PER_MINUTE=30
 BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE=120
+DATABASE_POOL_MODE=serverless
+CRON_SECRET=usar-un-tercer-secreto-largo-y-aleatorio
+BOT_CONVERSATION_TTL_DAYS=30
+WEBHOOK_RECEIPT_TTL_DAYS=30
 ```
 
 Notas:
@@ -173,7 +183,9 @@ Notas:
 - Cada negocio nuevo recibe 15 dias de prueba. Desde Owner se puede extender la prueba, suspender el acceso o marcarlo como pago/activo.
 - El bot por reglas y el webhook pueden responder cuando alguien escribe.
 - El contexto del bot y el rate limiting se guardan en PostgreSQL, por lo que sobreviven a invocaciones serverless distintas.
-- Las migraciones Alembic hasta `20260809_0012` fueron aplicadas en Supabase el 9 de agosto de 2026; si se agregan nuevas migraciones, correrlas antes de redeployar.
+- El proveedor de WhatsApp debe enviar su identificador unico como `message_id`; los reintentos no vuelven a ejecutar la accion.
+- Vercel ejecuta `/internal/maintenance` una vez al dia para eliminar estado temporal vencido.
+- Las migraciones Alembic hasta `20260809_0014` deben estar aplicadas antes de redeployar.
 
 ## Pasos en InsForge
 
@@ -228,9 +240,11 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `ADMIN_PASSWORD` no usa valor de ejemplo.
 - [ ] `SESSION_SECRET` tiene al menos 32 caracteres aleatorios.
 - [ ] `BOT_WEBHOOK_SECRET` tiene al menos 32 caracteres aleatorios y se envia en `X-TurnoFlow-Webhook-Secret`.
+- [ ] `CRON_SECRET` tiene al menos 32 caracteres aleatorios.
+- [ ] `DATABASE_POOL_MODE=serverless` en Vercel.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
-- [ ] `python -m alembic current` muestra `20260809_0012`.
+- [ ] `python -m alembic current` muestra `20260809_0014`.
 - [ ] `python -m app.create_owner` ejecutado.
 - [ ] `python -m app.check_production` devuelve OK.
 - [ ] Datos demo o datos reales iniciales cargados.
@@ -239,6 +253,9 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] Probado crear, cancelar, reprogramar, cobrar turno y registrar insumo.
 - [ ] Probado webhook local `POST /bot/webhook` con el numero del negocio.
 - [ ] Backup generado y restore probado en base separada.
+- [ ] Smoke de carga aprobado con `python -m app.load_smoke --url https://TU-DOMINIO/health --requests 200 --concurrency 20`.
+
+La estrategia por hitos de 10 a 10.000 negocios esta en `SCALING.md`. Cada salto exige mediciones de trafico real y capacidad contratada; no se valida solo por cantidad de cuentas creadas.
 
 ## Restore de backup de prueba
 

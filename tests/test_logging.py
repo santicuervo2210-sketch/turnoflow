@@ -5,12 +5,18 @@ from app.core.logging import JsonFormatter, build_error_log_payload, send_error_
 
 
 def test_error_log_payload_is_structured_without_sensitive_request_data() -> None:
-    payload = build_error_log_payload("POST", "/login", ValueError("password=secret"))
+    payload = build_error_log_payload(
+        "POST",
+        "/login",
+        ValueError("password=secret"),
+        request_id="request-123",
+    )
 
     assert payload["event"] == "unhandled_error"
     assert payload["method"] == "POST"
     assert payload["path"] == "/login"
     assert payload["exception_type"] == "ValueError"
+    assert payload["request_id"] == "request-123"
     assert "password" not in json.dumps(payload).lower()
     assert "secret" not in json.dumps(payload).lower()
 

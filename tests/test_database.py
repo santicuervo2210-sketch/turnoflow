@@ -1,4 +1,5 @@
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
 import app.db.session as db_session_module
 from app.db.session import build_engine
@@ -27,3 +28,22 @@ def test_build_engine_disables_prepared_statements_for_postgres_poolers(monkeypa
 
     assert captured["connect_args"] == {"prepare_threshold": None}
     assert captured["pool_pre_ping"] is True
+
+
+def test_build_engine_uses_no_local_pool_in_serverless_mode(monkeypatch) -> None:
+    captured: dict = {}
+
+    def fake_create_engine(database_url: str, **kwargs):
+        captured["database_url"] = database_url
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(db_session_module, "create_engine", fake_create_engine)
+
+    build_engine(
+        "postgresql+psycopg://user:secret@pooler.example/turnoflow",
+        pool_mode="serverless",
+    )
+
+    assert captured["poolclass"] is NullPool
+    assert captured["pool_pre_ping"] is False

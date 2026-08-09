@@ -7,7 +7,7 @@ import hmac
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -21,6 +21,7 @@ from app.models import (
     Barber,
     BarberShop,
     BarberTimeBlock,
+    BotWebhookReceipt,
     BotServiceAlias,
     Customer,
     Service,
@@ -295,49 +296,110 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         joinedload(Appointment.barber),
     )
     appointments_query = _shop_filter(select(Appointment), shop_id, Appointment)
+    filtered_condition = true()
     if start_date is not None:
-        appointments_query = appointments_query.where(Appointment.starts_at >= datetime.combine(start_date, time.min))
+        start_datetime = datetime.combine(start_date, time.min)
+        appointments_query = appointments_query.where(Appointment.starts_at >= start_datetime)
+        filtered_condition = and_(filtered_condition, Appointment.starts_at >= start_datetime)
     if end_date is not None:
-        appointments_query = appointments_query.where(Appointment.starts_at <= datetime.combine(end_date, time.max))
-    agenda_appointments = list(
-        session.scalars(
-            _shop_filter(
-                select(Appointment).options(*appointment_relationships).order_by(Appointment.starts_at),
-                shop_id,
-                Appointment,
-            )
-        ).unique().all()
-    )
-    if start_date is None and end_date is None:
-        total_filtered_appointments = len(agenda_appointments)
-        offset = (page - 1) * per_page
-        appointments = list(reversed(agenda_appointments))[offset : offset + per_page]
-    else:
-        total_filtered_appointments = session.scalar(
-            select(func.count()).select_from(appointments_query.order_by(None).subquery())
-        ) or 0
-        appointments = list(
-            session.scalars(
-                appointments_query.options(*appointment_relationships)
-                .order_by(Appointment.starts_at)
-                .offset((page - 1) * per_page)
-                .limit(per_page)
-            ).unique().all()
-        )
-    supply_sales = list(
-        session.scalars(_shop_filter(select(SupplySale).order_by(SupplySale.id), shop_id, SupplySale)).all()
-    )
+        end_datetime = datetime.combine(end_date, time.max)
+        appointments_query = appointments_query.where(Appointment.starts_at <= end_datetime)
+        filtered_condition = and_(filtered_condition, Appointment.starts_at <= end_datetime)
     now = datetime.now()
     today = now.date()
     tomorrow = today + timedelta(days=1)
-    agenda_source_appointments = appointments if start_date is not None or end_date is not None else agenda_appointments
-    active_appointments = [
-        appointment
-        for appointment in agenda_source_appointments
-        if appointment.status in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
-        and _as_naive_datetime(appointment.starts_at) >= now
-    ]
-    active_appointment_ids = {appointment.id for appointment in active_appointments}
+    today_start = datetime.combine(today, time.min)
+    today_end = datetime.combine(today, time.max)
+    active_statuses = (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
+    active_condition = and_(Appointment.status.in_(active_statuses), Appointment.starts_at >= now)
+    history_condition = or_(Appointment.status.not_in(active_statuses), Appointment.starts_at < now)
+
+    metrics_query = (
+        select(
+            func.count(case((filtered_condition, Appointment.id))).label("filtered_count"),
+            func.coalesce(
+                func.sum(case((and_(filtered_condition, history_condition), 1), else_=0)), 0
+            ).label("history_count"),
+            func.coalesce(func.sum(case((Appointment.is_paid.is_(True), 1), else_=0)), 0).label("paid_count"),
+            func.coalesce(
+                func.sum(case((Appointment.is_paid.is_(True), Service.price), else_=0)), 0
+            ).label("appointment_revenue"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                Appointment.status == AppointmentStatus.COMPLETED.value,
+                                Appointment.is_paid.is_(True),
+                            ),
+                            Service.price,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("completed_revenue"),
+            func.coalesce(
+                func.sum(case((and_(filtered_condition, active_condition), Service.price), else_=0)), 0
+            ).label("active_expected_revenue"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Appointment.status == AppointmentStatus.CANCELLED.value, Service.price),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("cancelled_value"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (
+                            and_(
+                                Appointment.is_paid.is_(True),
+                                Appointment.paid_at >= today_start,
+                                Appointment.paid_at <= today_end,
+                            ),
+                            Service.price,
+                        ),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("today_appointment_revenue"),
+            func.coalesce(
+                func.sum(case((and_(filtered_condition, active_condition), 1), else_=0)), 0
+            ).label("active_count"),
+        )
+        .select_from(Appointment)
+        .join(Service, Service.id == Appointment.service_id)
+    )
+    metrics_query = _shop_filter(metrics_query, shop_id, Appointment)
+    appointment_metrics = session.execute(metrics_query).one()
+    total_filtered_appointments = int(appointment_metrics.filtered_count or 0)
+
+    appointment_order = (
+        Appointment.starts_at.desc()
+        if start_date is None and end_date is None
+        else Appointment.starts_at.asc()
+    )
+    appointments = list(
+        session.scalars(
+            appointments_query.options(*appointment_relationships)
+            .order_by(appointment_order)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        ).unique().all()
+    )
+    active_query = _shop_filter(
+        select(Appointment)
+        .options(*appointment_relationships)
+        .where(filtered_condition, active_condition),
+        shop_id,
+        Appointment,
+    )
+    active_query = active_query.order_by(Appointment.starts_at).limit(200)
+    active_appointments = list(session.scalars(active_query).unique().all())
     agenda_today_appointments = [appointment for appointment in active_appointments if appointment.starts_at.date() == today]
     agenda_tomorrow_appointments = [
         appointment for appointment in active_appointments if appointment.starts_at.date() == tomorrow
@@ -345,63 +407,46 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     agenda_upcoming_appointments = [
         appointment for appointment in active_appointments if appointment.starts_at.date() > tomorrow
     ]
-    appointment_history_total = len([
-        appointment for appointment in agenda_source_appointments if appointment.id not in active_appointment_ids
-    ])
+    appointment_history_total = int(appointment_metrics.history_count or 0)
     appointment_history = [
         appointment
         for appointment in appointments
         if appointment.status not in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
         or _as_naive_datetime(appointment.starts_at) < now
     ]
-    today_start = datetime.combine(today, time.min)
-    today_end = datetime.combine(today, time.max)
+    recent_supply_query = _shop_filter(select(SupplySale), shop_id, SupplySale)
+    recent_supply_sales = list(
+        session.scalars(recent_supply_query.order_by(SupplySale.id.desc()).limit(200)).all()
+    )
+    supply_sales = list(reversed(recent_supply_sales))
     today_supply_sales = [
         sale
-        for sale in supply_sales
+        for sale in recent_supply_sales
         if sale.created_at is not None and today_start <= sale.created_at.replace(tzinfo=None) <= today_end
     ]
-    paid_appointments = [appointment for appointment in agenda_appointments if appointment.is_paid]
-    paid_today_appointments = [
-        appointment
-        for appointment in paid_appointments
-        if appointment.paid_at is not None and today_start <= appointment.paid_at.replace(tzinfo=None) <= today_end
-    ]
-    completed_paid_appointments = [
-        appointment
-        for appointment in agenda_appointments
-        if appointment.status == AppointmentStatus.COMPLETED.value and appointment.is_paid
-    ]
-    cancelled_appointments = [
-        appointment for appointment in agenda_appointments if appointment.status == AppointmentStatus.CANCELLED.value
-    ]
-    appointment_revenue = sum(
-        appointment.service.price
-        for appointment in paid_appointments
-        if appointment.service is not None
+    supply_metrics_query = select(
+        func.coalesce(func.sum(SupplySale.unit_price * SupplySale.quantity), 0).label("revenue"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        and_(SupplySale.created_at >= today_start, SupplySale.created_at <= today_end),
+                        SupplySale.unit_price * SupplySale.quantity,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("today_revenue"),
     )
-    completed_appointment_revenue = sum(
-        appointment.service.price
-        for appointment in completed_paid_appointments
-        if appointment.service is not None
-    )
-    active_expected_revenue = sum(
-        appointment.service.price
-        for appointment in active_appointments
-        if appointment.service is not None
-    )
-    cancelled_value = sum(
-        appointment.service.price
-        for appointment in cancelled_appointments
-        if appointment.service is not None
-    )
-    supply_revenue = sum(sale.total_price for sale in supply_sales)
-    today_appointment_revenue = sum(
-        appointment.service.price
-        for appointment in paid_today_appointments
-        if appointment.service is not None
-    )
-    today_supply_revenue = sum(sale.total_price for sale in today_supply_sales)
+    supply_metrics = session.execute(_shop_filter(supply_metrics_query, shop_id, SupplySale)).one()
+    appointment_revenue = appointment_metrics.appointment_revenue
+    completed_appointment_revenue = appointment_metrics.completed_revenue
+    active_expected_revenue = appointment_metrics.active_expected_revenue
+    cancelled_value = appointment_metrics.cancelled_value
+    supply_revenue = supply_metrics.revenue
+    today_appointment_revenue = appointment_metrics.today_appointment_revenue
+    today_supply_revenue = supply_metrics.today_revenue
     services = list(session.scalars(_shop_filter(select(Service).order_by(Service.id), shop_id, Service)).all())
     barbers = list(
         session.scalars(
@@ -540,9 +585,9 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             "shops": len(shops),
             "active_shops": len([shop for shop in shops if barber_shop_has_access(shop)]),
             "appointments": total_filtered_appointments,
-            "active_appointments": len(active_appointments),
+            "active_appointments": int(appointment_metrics.active_count or 0),
             "history_appointments": appointment_history_total,
-            "paid_appointments": len(paid_appointments),
+            "paid_appointments": int(appointment_metrics.paid_count or 0),
             "revenue": appointment_revenue + supply_revenue,
             "completed_revenue": completed_appointment_revenue,
             "active_expected_revenue": active_expected_revenue,
@@ -2368,9 +2413,11 @@ def bot_webhook(
     if not hmac.compare_digest(provided_secret.encode("utf-8"), configured_secret.encode("utf-8")):
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="La clave del webhook no es valida.")
     business_number = payload.to_business_number.strip()
+    sender_number = payload.from_phone.strip()
+    limiter_identity = hashlib.sha256(f"{business_number}:{sender_number}".encode("utf-8")).hexdigest()
     if is_rate_limited(
         session,
-        f"bot-webhook:{_client_host(request)}",
+        f"bot-webhook:{limiter_identity}",
         settings.bot_webhook_rate_limit_per_minute,
     ):
         raise HTTPException(status_code=HTTPStatus.TOO_MANY_REQUESTS, detail="Demasiados mensajes enviados al bot.")
@@ -2385,15 +2432,66 @@ def bot_webhook(
     if shop is None:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="El numero del negocio no esta configurado.")
 
-    context = _bot_context_for(session, shop.id, payload.from_phone)
-    messages = process_bot_message(
-        session,
-        payload.message,
-        shop.id,
-        payload.from_phone,
-        context,
-    )
-    return {
-        "barber_shop_id": shop.id,
-        "messages": [{"sender": sender, "text": text} for sender, text in messages],
-    }
+    message_id = payload.message_id.strip() if payload.message_id else None
+    receipt: BotWebhookReceipt | None = None
+    if message_id:
+        receipt = session.scalar(
+            select(BotWebhookReceipt).where(
+                BotWebhookReceipt.barber_shop_id == shop.id,
+                BotWebhookReceipt.provider_message_id == message_id,
+            )
+        )
+        if receipt and receipt.status == "completed" and receipt.response_payload:
+            return receipt.response_payload
+        if receipt and receipt.status == "processing":
+            return {"barber_shop_id": shop.id, "messages": []}
+        if receipt is None:
+            receipt = BotWebhookReceipt(
+                barber_shop_id=shop.id,
+                provider_message_id=message_id,
+                status="processing",
+            )
+            session.add(receipt)
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                existing_receipt = session.scalar(
+                    select(BotWebhookReceipt).where(
+                        BotWebhookReceipt.barber_shop_id == shop.id,
+                        BotWebhookReceipt.provider_message_id == message_id,
+                    )
+                )
+                if existing_receipt and existing_receipt.response_payload:
+                    return existing_receipt.response_payload
+                return {"barber_shop_id": shop.id, "messages": []}
+        else:
+            receipt.status = "processing"
+            session.commit()
+
+    try:
+        context = _bot_context_for(session, shop.id, sender_number)
+        messages = process_bot_message(
+            session,
+            payload.message,
+            shop.id,
+            sender_number,
+            context,
+        )
+        response_payload = {
+            "barber_shop_id": shop.id,
+            "messages": [{"sender": sender, "text": text} for sender, text in messages],
+        }
+        if receipt:
+            receipt.status = "completed"
+            receipt.response_payload = response_payload
+            session.commit()
+        return response_payload
+    except Exception:
+        if receipt:
+            session.rollback()
+            receipt = session.get(BotWebhookReceipt, receipt.id)
+            if receipt:
+                receipt.status = "failed"
+                session.commit()
+        raise

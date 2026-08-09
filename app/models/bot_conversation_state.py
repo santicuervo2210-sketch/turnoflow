@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -13,6 +13,7 @@ class BotConversationState(TimestampMixin, Base):
     __tablename__ = "bot_conversation_states"
     __table_args__ = (
         UniqueConstraint("barber_shop_id", "phone", name="uq_bot_conversation_shop_phone"),
+        Index("ix_bot_conversation_states_updated_at", "updated_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

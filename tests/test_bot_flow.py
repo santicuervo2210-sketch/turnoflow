@@ -235,6 +235,39 @@ def test_bot_webhook_resolves_shop_from_business_number(client: TestClient) -> N
     assert "Corte cuesta $10000.00" in payload["messages"][0]["text"]
 
 
+def test_bot_webhook_processes_a_provider_message_only_once(client: TestClient, monkeypatch) -> None:
+    import app.web.routes as web_routes
+
+    shop_id = client.post(
+        "/api/barber-shops",
+        json={"name": "Webhook Idempotente", "phone": "+5491199999988"},
+    ).json()["id"]
+    calls = 0
+
+    def fake_process(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return [("bot", "Respuesta unica")]
+
+    monkeypatch.setattr(web_routes, "process_bot_message", fake_process)
+    request = {
+        "message_id": "wamid.demo-123",
+        "from_phone": "+5491111111111",
+        "to_business_number": "+5491199999988",
+        "message": "hola",
+    }
+    headers = {"X-TurnoFlow-Webhook-Secret": "test-webhook-secret-with-at-least-32-characters"}
+
+    first_response = client.post("/bot/webhook", json=request, headers=headers)
+    retry_response = client.post("/bot/webhook", json=request, headers=headers)
+
+    assert first_response.status_code == 200
+    assert retry_response.status_code == 200
+    assert first_response.json() == retry_response.json()
+    assert first_response.json()["barber_shop_id"] == shop_id
+    assert calls == 1
+
+
 def test_bot_books_with_the_only_professional_even_without_service_assignment(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Bot Profesional Unico"}).json()["id"]
     service_id = client.post(

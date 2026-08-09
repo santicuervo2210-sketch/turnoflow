@@ -8,6 +8,7 @@ from typing import Any
 from app.core.config import settings
 
 error_logger = logging.getLogger("turnoflow.errors")
+request_logger = logging.getLogger("turnoflow.requests")
 
 
 class JsonFormatter(logging.Formatter):
@@ -29,13 +30,19 @@ def configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
-def build_error_log_payload(method: str, path: str, exc: Exception) -> dict[str, Any]:
+def build_error_log_payload(
+    method: str,
+    path: str,
+    exc: Exception,
+    request_id: str | None = None,
+) -> dict[str, Any]:
     return {
         "event": "unhandled_error",
         "environment": settings.environment,
         "method": method,
         "path": path,
         "exception_type": type(exc).__name__,
+        "request_id": request_id,
     }
 
 
@@ -57,10 +64,33 @@ def send_error_alert(payload: dict[str, Any]) -> None:
         error_logger.warning("error_alert_delivery_failed")
 
 
-def log_unhandled_error(method: str, path: str, exc: Exception) -> None:
-    payload = build_error_log_payload(method, path, exc)
+def log_unhandled_error(method: str, path: str, exc: Exception, request_id: str | None = None) -> None:
+    payload = build_error_log_payload(method, path, exc, request_id)
     error_logger.exception(
         "unhandled_error",
         extra={"structured_payload": payload},
     )
     send_error_alert(payload)
+
+
+def log_request_completed(
+    method: str,
+    path: str,
+    status_code: int,
+    duration_ms: float,
+    request_id: str,
+) -> None:
+    request_logger.info(
+        "request_completed",
+        extra={
+            "structured_payload": {
+                "event": "request_completed",
+                "environment": settings.environment,
+                "method": method,
+                "path": path,
+                "status_code": status_code,
+                "duration_ms": round(duration_ms, 2),
+                "request_id": request_id,
+            }
+        },
+    )

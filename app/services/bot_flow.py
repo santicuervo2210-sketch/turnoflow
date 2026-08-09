@@ -3,12 +3,13 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import settings
 from app.models import (
     Appointment,
     AppointmentStatus,
@@ -114,6 +115,13 @@ def load_bot_conversation_context(
         )
     ).first()
     if state is None:
+        return BotConversationContext(barber_shop_id=barber_shop_id)
+    updated_at = state.updated_at
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=UTC)
+    if updated_at < datetime.now(UTC) - timedelta(days=settings.bot_conversation_ttl_days):
+        session.delete(state)
+        session.commit()
         return BotConversationContext(barber_shop_id=barber_shop_id)
     return BotConversationContext(
         barber_shop_id=barber_shop_id,

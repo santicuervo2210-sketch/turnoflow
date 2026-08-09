@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     error_alert_webhook_url: str | None = None
     login_rate_limit_per_minute: int = 30
     bot_webhook_rate_limit_per_minute: int = 120
+    database_pool_mode: str = "serverless"
+    cron_secret: str = ""
+    bot_conversation_ttl_days: int = 30
+    webhook_receipt_ttl_days: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

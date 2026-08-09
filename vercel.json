@@ -1,6 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["gru1"],
+  "crons": [
+    {
+      "path": "/internal/maintenance",
+      "schedule": "0 4 * * *"
+    }
+  ],
   "builds": [
     {
       "src": "api/index.py",

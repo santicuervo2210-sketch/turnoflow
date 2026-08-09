@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -26,6 +26,12 @@ class BarberShop(TimestampMixin, Base):
         CheckConstraint(
             "business_category IN ('barberia', 'unas', 'pestanas', 'masajes', 'tatuajes', 'general')",
             name="ck_barber_shops_business_category",
+        ),
+        Index(
+            "uq_barber_shops_phone_not_null",
+            "phone",
+            unique=True,
+            postgresql_where=text("phone IS NOT NULL"),
         ),
     )
 

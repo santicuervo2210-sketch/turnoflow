@@ -12,6 +12,9 @@ def test_configuration_errors_include_unsafe_production_settings(monkeypatch) ->
     monkeypatch.setattr(settings, "login_rate_limit_per_minute", 0)
     monkeypatch.setattr(settings, "bot_webhook_rate_limit_per_minute", 0)
     monkeypatch.setattr(settings, "error_alert_webhook_url", "http://example.com/hook")
+    monkeypatch.setattr(settings, "database_pool_mode", "invalid")
+    monkeypatch.setattr(settings, "cron_secret", "")
+    monkeypatch.setattr(settings, "bot_conversation_ttl_days", 0)
 
     errors = configuration_errors()
 
@@ -24,3 +27,6 @@ def test_configuration_errors_include_unsafe_production_settings(monkeypatch) ->
     assert any("LOGIN_RATE_LIMIT_PER_MINUTE" in error for error in errors)
     assert any("BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE" in error for error in errors)
     assert any("ERROR_ALERT_WEBHOOK_URL" in error for error in errors)
+    assert any("DATABASE_POOL_MODE" in error for error in errors)
+    assert any("CRON_SECRET" in error for error in errors)
+    assert any("TTL" in error for error in errors)

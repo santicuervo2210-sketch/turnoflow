@@ -39,6 +39,7 @@ class BotSettingsUpdate(BaseModel):
 
 
 class BotWebhookRequest(BaseModel):
+    message_id: str | None = Field(default=None, min_length=1, max_length=128)
     from_phone: str = Field(min_length=1, max_length=30)
     to_business_number: str = Field(min_length=1, max_length=30)
     message: str = Field(min_length=1, max_length=1000)

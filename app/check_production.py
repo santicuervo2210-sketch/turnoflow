@@ -7,7 +7,7 @@ from app.db.session import build_engine
 from app.models import User, UserRole
 from app.db.session import SessionLocal
 
-LATEST_ALEMBIC_REVISION = "20260809_0012"
+LATEST_ALEMBIC_REVISION = "20260809_0014"
 
 
 def _fail(message: str) -> None:
@@ -35,6 +35,15 @@ def configuration_errors() -> list[str]:
     if settings.sqlalchemy_database_url.startswith("sqlite"):
         errors.append("Para deploy usa PostgreSQL, no SQLite.")
 
+    if settings.database_pool_mode not in {"serverless", "persistent"}:
+        errors.append("DATABASE_POOL_MODE debe ser serverless o persistent.")
+
+    if not settings.cron_secret or len(settings.cron_secret) < 32:
+        errors.append("CRON_SECRET debe existir y tener al menos 32 caracteres.")
+
+    if settings.bot_conversation_ttl_days <= 0 or settings.webhook_receipt_ttl_days <= 0:
+        errors.append("Los TTL de bot y webhook deben ser mayores a 0.")
+
     if settings.login_rate_limit_per_minute <= 0:
         errors.append("LOGIN_RATE_LIMIT_PER_MINUTE debe ser mayor a 0.")
 
@@ -55,7 +64,7 @@ def main() -> None:
     if errors:
         _fail(errors[0])
 
-    engine = build_engine(settings.sqlalchemy_database_url)
+    engine = build_engine(settings.sqlalchemy_database_url, settings.database_pool_mode)
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
         alembic_revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one_or_none()
