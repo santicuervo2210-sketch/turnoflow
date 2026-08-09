@@ -206,10 +206,10 @@
         <div class="tf-agenda-group">
           <div class="tf-group-heading">
             <h3>Historial / pasados</h3>
-            <span>{{ appointment_history|length }} registro{% if appointment_history|length != 1 %}s{% endif %}</span>
+            <span>{{ appointment_history_total }} registro{% if appointment_history_total != 1 %}s{% endif %}</span>
           </div>
           <div class="tf-schedule-list" aria-label="Historial de turnos pasados">
-            {% for appointment in appointment_history|reverse %}
+            {% for appointment in appointment_history %}
               {{ appointment_row(appointment, csrf_token, False) }}
             {% else %}
               <div class="empty-state compact">Todavia no hay turnos pasados, cancelados o completados.</div>
@@ -396,6 +396,7 @@
                 <strong>{{ service.name }}</strong>
                 <span>{{ service.duration_minutes }} min / ${{ service.price }}</span>
               </div>
+              <span class="badge {% if service.is_active %}badge-access-active{% else %}badge-access-suspended{% endif %}">{{ "Activo" if service.is_active else "Inactivo" }}</span>
             </div>
             <form action="/admin/services/{{ service.id }}/edit" method="post" class="tf-edit-grid">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -403,6 +404,10 @@
               <input class="form-control form-control-sm" type="number" min="1" name="duration_minutes" value="{{ service.duration_minutes }}" required>
               <input class="form-control form-control-sm" type="number" step="0.01" min="0" name="price" value="{{ service.price }}" required>
               <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>
+            </form>
+            <form action="/admin/services/{{ service.id }}/toggle" method="post" class="mt-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn btn-sm {% if service.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %} w-100" type="submit">{{ "Desactivar" if service.is_active else "Activar" }}</button>
             </form>
           </article>
         {% else %}
@@ -581,7 +586,7 @@
           {% endfor %}
         </div>
         <div class="tf-stack">
-          <h3 class="tf-subtitle">Saludo inicial</h3>
+          <h3 class="tf-subtitle">Bot y vocabulario</h3>
           {% for shop in shops %}
             {% set settings = bot_settings_by_shop[shop.id] %}
             <form action="/admin/bot-settings/{{ shop.id }}" method="post" class="tf-data-card">
@@ -592,12 +597,66 @@
               <input type="hidden" name="reminder_template" value="{{ settings.reminder_template }}">
               <div class="tf-card-title-row">
                 <strong>{{ shop.name }}</strong>
-                <span class="badge badge-access-active">saludo</span>
+                <span class="badge badge-access-active">{{ business_category_labels[shop.business_category] }}</span>
               </div>
+              <label class="form-label">Rubro</label>
+              <select class="form-select mb-2" name="business_category">
+                {% for category, label in business_category_labels.items() %}
+                  <option value="{{ category }}" {% if shop.business_category == category %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
               <label class="form-label">Mensaje que vera el cliente</label>
               <textarea class="form-control" name="greeting_message" rows="3" required>{{ settings.greeting_message }}</textarea>
-              <button class="btn btn-primary mt-2" type="submit">Guardar saludo</button>
+              <label class="form-label mt-2">Menu inicial</label>
+              <textarea class="form-control" name="menu_message" rows="4" required>{{ settings.menu_message }}</textarea>
+              <button class="btn btn-primary mt-2" type="submit">Guardar configuracion</button>
             </form>
+            <article class="tf-data-card">
+              <div class="tf-card-title-row">
+                <div><strong>Palabras del negocio</strong><span>Conectan la forma de hablar del cliente con un servicio.</span></div>
+              </div>
+              <form action="/admin/bot-aliases/{{ shop.id }}" method="post" class="tf-inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input class="form-control form-control-sm" name="alias" placeholder="Ej: semi, masaje fuerte" required>
+                <select class="form-select form-select-sm" name="service_id" required>
+                  {% for service in services if service.barber_shop_id == shop.id and service.is_active %}
+                    <option value="{{ service.id }}">{{ service.name }}</option>
+                  {% endfor %}
+                </select>
+                <button class="btn btn-sm btn-outline-primary" type="submit">Agregar</button>
+              </form>
+              <div class="team-pills mt-2">
+                {% for alias in bot_alias_overrides_by_shop[shop.id] if alias.is_active %}
+                  <form action="/admin/bot-aliases/{{ shop.id }}/{{ alias.id }}/delete" method="post" class="d-inline-flex align-items-center gap-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <span>{{ alias.alias }} / servicio #{{ alias.service_id }}</span>
+                    <button class="btn btn-sm btn-link text-danger p-0" type="submit" aria-label="Quitar {{ alias.alias }}">Quitar</button>
+                  </form>
+                {% endfor %}
+              </div>
+              <details class="mt-3">
+                <summary>Palabras incluidas por el rubro</summary>
+                <div class="tf-compact-list mt-2">
+                  {% for default_alias in bot_category_defaults_by_shop[shop.id] %}
+                    <div class="tf-compact-row">
+                      <span>{{ default_alias.alias }} → {{ default_alias.service_term }}</span>
+                      <form action="/admin/bot-aliases/{{ shop.id }}/suppress" method="post">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                        <input type="hidden" name="alias" value="{{ default_alias.alias }}">
+                        <button class="btn btn-sm btn-link text-danger" type="submit">Ocultar</button>
+                      </form>
+                    </div>
+                  {% endfor %}
+                </div>
+              </details>
+              {% for alias in bot_alias_overrides_by_shop[shop.id] if not alias.is_active %}
+                <form action="/admin/bot-aliases/{{ shop.id }}/{{ alias.id }}/delete" method="post" class="tf-compact-row mt-2">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <span>{{ alias.alias }} esta oculto</span>
+                  <button class="btn btn-sm btn-outline-success" type="submit">Restaurar default</button>
+                </form>
+              {% endfor %}
+            </article>
           {% else %}
             <div class="empty-state">Crea un negocio para configurar el saludo automatico.</div>
           {% endfor %}
@@ -638,7 +697,7 @@
             <tr><th>Turno</th><th>Cliente</th><th>Servicio</th><th>Fecha</th><th>Estado</th><th>Resultado</th></tr>
           </thead>
           <tbody>
-            {% for appointment in appointment_history|reverse %}
+            {% for appointment in appointment_history %}
               <tr>
                 <td data-label="Turno">#{{ appointment.id }}</td>
                 <td data-label="Cliente">{{ appointment.customer.full_name }}</td>

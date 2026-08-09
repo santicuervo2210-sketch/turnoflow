@@ -7,7 +7,14 @@ from app.core.config import settings
 
 
 def build_engine(database_url: str) -> Engine:
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    if database_url.startswith("sqlite"):
+        connect_args = {"check_same_thread": False}
+    elif database_url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+        # Supavisor/PgBouncer can reuse a backend connection that already has
+        # statement names from another client. Client-side prepares must stay off.
+        connect_args = {"prepare_threshold": None}
+    else:
+        connect_args = {}
 
     return create_engine(
         database_url,

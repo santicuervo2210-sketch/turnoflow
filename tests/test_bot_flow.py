@@ -1,11 +1,14 @@
 from fastapi.testclient import TestClient
 import httpx
 from datetime import time
+import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import Appointment, Barber, BarberShop, Customer, Service, WorkingSchedule
+from app.models import Appointment, AppointmentStatus, Barber, BarberShop, BotConversationState, Customer, Service, WorkingSchedule
+from app.services.appointments import create_appointment
+from app.services.bot_categories import save_service_alias, set_business_category, suppress_default_alias
 from app.services.bot_flow import BotConversationContext, process_bot_message
 
 
@@ -552,6 +555,115 @@ def test_bot_simulator_keeps_separate_context_per_sender_phone(client: TestClien
     )
     assert second_day_response.status_code == 200
     assert "Para Claritos el" in second_day_response.text
+
+
+def test_bot_context_survives_a_new_database_session_identity(db_session: Session) -> None:
+    shop = _seed_bot_shop(db_session, name="Bot persistente", service_name="Corte", price="10000.00")
+    shop_id = shop.id
+    phone = "+5491199999999"
+
+    process_bot_message(db_session, "quiero corte", shop_id, phone)
+    state = db_session.scalars(
+        select(BotConversationState).where(
+            BotConversationState.barber_shop_id == shop_id,
+            BotConversationState.phone == phone,
+        )
+    ).one()
+    assert state.service_id is not None
+
+    db_session.expunge_all()
+    response = process_bot_message(db_session, "2026-08-15", shop_id, phone)
+
+    assert "Para Corte el" in response[0][1]
+
+
+def test_bot_category_defaults_and_business_overrides_are_data_driven(db_session: Session) -> None:
+    shop = _seed_bot_shop(db_session, name="Estudio de unas", service_name="Semipermanente", price="18000.00")
+    second_service = Service(
+        barber_shop_id=shop.id,
+        name="Esculpidas",
+        duration_minutes=90,
+        price="25000.00",
+    )
+    barber = db_session.scalars(select(Barber).where(Barber.barber_shop_id == shop.id)).one()
+    barber.services.append(second_service)
+    db_session.add(second_service)
+    db_session.commit()
+    set_business_category(db_session, shop.id, "unas")
+
+    default_response = process_bot_message(db_session, "quiero semi", shop.id, "+5491110000001")
+    assert "Semipermanente" in default_response[0][1]
+
+    save_service_alias(db_session, shop.id, second_service.id, "unas largas")
+    override_response = process_bot_message(db_session, "quiero unas largas", shop.id, "+5491110000002")
+    assert "Esculpidas" in override_response[0][1]
+
+    suppress_default_alias(db_session, shop.id, "semi")
+    suppressed_response = process_bot_message(db_session, "quiero semi", shop.id, "+5491110000003")
+    assert "Semipermanente" not in suppressed_response[0][1]
+
+
+@pytest.mark.parametrize(
+    ("category", "service_name", "customer_words"),
+    (
+        ("unas", "Semipermanente", "semi"),
+        ("masajes", "Descontracturante", "contractura"),
+        ("tatuajes", "Retoque", "retocar"),
+    ),
+)
+def test_same_bot_flow_books_reschedules_and_cancels_for_every_category(
+    db_session: Session,
+    category: str,
+    service_name: str,
+    customer_words: str,
+) -> None:
+    shop = _seed_bot_shop(db_session, name=f"Demo {category}", service_name=service_name, price="20000.00")
+    set_business_category(db_session, shop.id, category)
+    barber = db_session.scalars(select(Barber).where(Barber.barber_shop_id == shop.id)).one()
+    service = db_session.scalars(select(Service).where(Service.barber_shop_id == shop.id)).one()
+    phone = f"+54911{shop.id:08d}"
+
+    booked = process_bot_message(
+        db_session,
+        f"reservame {customer_words} el 2026-08-15 a las 09:00",
+        shop.id,
+        phone,
+    )
+    assert "te confirme el turno" in booked[0][1]
+
+    rescheduled = process_bot_message(
+        db_session,
+        "reprogramar el 2026-08-15 a las 10:00",
+        shop.id,
+        phone,
+    )
+    assert "reprograme el turno" in rescheduled[0][1]
+    bot_appointment = db_session.scalars(
+        select(Appointment).where(Appointment.barber_shop_id == shop.id)
+    ).one()
+    assert bot_appointment.starts_at.hour == 10
+    assert bot_appointment.status == AppointmentStatus.CONFIRMED.value
+
+    cancelled = process_bot_message(db_session, "cancelar turno", shop.id, phone)
+    assert "cancele el turno" in cancelled[0][1]
+    db_session.refresh(bot_appointment)
+    assert bot_appointment.status == AppointmentStatus.CANCELLED.value
+
+    manual_customer = Customer(barber_shop_id=shop.id, full_name="Carga manual")
+    db_session.add(manual_customer)
+    db_session.commit()
+    manual_appointment = create_appointment(
+        db_session,
+        barber_id=barber.id,
+        customer_id=manual_customer.id,
+        service_id=service.id,
+        starts_at=bot_appointment.starts_at.replace(hour=11),
+        status=AppointmentStatus.CONFIRMED,
+    )
+    assert manual_appointment.barber_shop_id == bot_appointment.barber_shop_id
+    assert manual_appointment.barber_id == bot_appointment.barber_id
+    assert manual_appointment.service_id == bot_appointment.service_id
+    assert manual_appointment.ends_at - manual_appointment.starts_at == bot_appointment.ends_at - bot_appointment.starts_at
 
 
 def test_bot_can_book_from_one_natural_message(client: TestClient) -> None:

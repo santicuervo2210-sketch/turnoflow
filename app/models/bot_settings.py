@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 
 
 DEFAULT_GREETING_MESSAGE = "Hola, soy el asistente de TurnoFlow. Te ayudo a reservar tu turno."
+DEFAULT_MENU_MESSAGE = (
+    "Que queres hacer? 1. Ver servicios y precios | 2. Sacar un turno | "
+    "3. Consultar mi turno | 4. Cancelar o reprogramar"
+)
 DEFAULT_REMINDER_TEMPLATE = (
     "Hola {customer_name}, te recordamos tu turno en {shop_name} "
     "el {starts_at}. Servicio: {service_name}."
@@ -42,6 +46,12 @@ class BotSettings(TimestampMixin, Base):
         server_default=DEFAULT_GREETING_MESSAGE,
         nullable=False,
     )
+    menu_message: Mapped[str] = mapped_column(
+        Text,
+        default=DEFAULT_MENU_MESSAGE,
+        server_default=DEFAULT_MENU_MESSAGE,
+        nullable=False,
+    )
     reminder_template: Mapped[str] = mapped_column(
         Text,
         default=DEFAULT_REMINDER_TEMPLATE,
@@ -50,4 +60,3 @@ class BotSettings(TimestampMixin, Base):
     )
 
     barber_shop: Mapped[BarberShop] = relationship(back_populates="bot_settings")
-

@@ -41,6 +41,8 @@ async def security_headers(request: Request, call_next):
     )
     if settings.environment == "production":
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    if request.url.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
     return response
 
 

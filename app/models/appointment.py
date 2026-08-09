@@ -28,6 +28,7 @@ class Appointment(TimestampMixin, Base):
         ),
         Index("ix_appointments_barber_starts_at", "barber_id", "starts_at"),
         Index("ix_appointments_shop_starts_at", "barber_shop_id", "starts_at"),
+        Index("ix_appointments_shop_status_starts_at", "barber_shop_id", "status", "starts_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

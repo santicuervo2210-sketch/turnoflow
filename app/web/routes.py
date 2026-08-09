@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.config import settings
 from app.core.logging import log_unhandled_error
@@ -21,6 +21,7 @@ from app.models import (
     Barber,
     BarberShop,
     BarberTimeBlock,
+    BotServiceAlias,
     Customer,
     Service,
     SupplySale,
@@ -49,8 +50,27 @@ from app.services.appointments import (
     suspend_barber_shop,
     update_appointment_status,
 )
-from app.services.bot_flow import BotConversationContext, process_bot_message
-from app.services.bot_settings import get_or_create_bot_settings, list_pending_reminders, update_bot_settings
+from app.services.bot_flow import (
+    BotConversationContext,
+    clear_bot_conversation_context,
+    load_bot_conversation_context,
+    process_bot_message,
+    save_bot_conversation_context,
+)
+from app.services.bot_settings import (
+    get_or_create_bot_settings,
+    get_or_create_bot_settings_map,
+    list_pending_reminders,
+    update_bot_settings,
+)
+from app.services.bot_categories import (
+    CATEGORY_LABELS,
+    delete_alias_override,
+    factory_defaults_for_category,
+    save_service_alias,
+    set_business_category,
+    suppress_default_alias,
+)
 from app.services.supply_sales import create_supply_sale
 from app.services.users import authenticate_user, create_password_reset_token, create_user, reset_password_with_token
 from app.schemas.business import BotWebhookRequest, BotWebhookResponse
@@ -71,7 +91,6 @@ from app.web.auth import (
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
-BOT_SIMULATOR_CONTEXTS: dict[tuple[int, str], BotConversationContext] = {}
 BOT_SIMULATOR_FROM_PHONE = "+5491100000000"
 WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
 ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
@@ -246,16 +265,17 @@ def _as_naive_datetime(value: datetime) -> datetime:
 
 
 def _commercial_status(shop: BarberShop) -> dict[str, object]:
+    plan = shop.plan  # Read-only commercial metadata; feature gating is intentionally deferred.
     if shop.access_status != "active":
-        return {"label": "Suspendido", "class": "suspended", "operational": False}
+        return {"label": "Suspendido", "class": "suspended", "operational": False, "plan": plan}
     if shop.trial_ends_at is None:
-        return {"label": "Pago / activo", "class": "paid", "operational": True}
+        return {"label": "Pago / activo", "class": "paid", "operational": True, "plan": plan}
 
     remaining = _as_naive_datetime(shop.trial_ends_at) - _as_naive_datetime(datetime.now(UTC))
     if remaining.total_seconds() < 0:
-        return {"label": "Prueba vencida", "class": "expired", "operational": False}
+        return {"label": "Prueba vencida", "class": "expired", "operational": False, "plan": plan}
     days = max(1, int((remaining.total_seconds() + 86_399) // 86_400))
-    return {"label": f"Prueba: {days} dias", "class": "trial", "operational": True}
+    return {"label": f"Prueba: {days} dias", "class": "trial", "operational": True, "plan": plan}
 
 
 def _dashboard_context(request: Request, session: Session, shop_id: int | None = None, **extra):
@@ -291,7 +311,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     if start_date is None and end_date is None:
         total_filtered_appointments = len(agenda_appointments)
         offset = (page - 1) * per_page
-        appointments = agenda_appointments[offset : offset + per_page]
+        appointments = list(reversed(agenda_appointments))[offset : offset + per_page]
     else:
         total_filtered_appointments = session.scalar(
             select(func.count()).select_from(appointments_query.order_by(None).subquery())
@@ -325,8 +345,14 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     agenda_upcoming_appointments = [
         appointment for appointment in active_appointments if appointment.starts_at.date() > tomorrow
     ]
-    appointment_history = [
+    appointment_history_total = len([
         appointment for appointment in agenda_source_appointments if appointment.id not in active_appointment_ids
+    ])
+    appointment_history = [
+        appointment
+        for appointment in appointments
+        if appointment.status not in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
+        or _as_naive_datetime(appointment.starts_at) < now
     ]
     today_start = datetime.combine(today, time.min)
     today_end = datetime.combine(today, time.max)
@@ -434,6 +460,14 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         shop.id: sorted({schedule.day_of_week for schedule in schedules_by_shop[shop.id]}) or list(BUSINESS_WEEKDAYS)
         for shop in shops
     }
+    shop_ids = [shop.id for shop in shops]
+    all_alias_overrides = list(
+        session.scalars(
+            select(BotServiceAlias)
+            .where(BotServiceAlias.barber_shop_id.in_(shop_ids))
+            .order_by(BotServiceAlias.alias)
+        ).all()
+    ) if shop_ids else []
     context = {
         "request": request,
         "now": now,
@@ -474,9 +508,18 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "agenda_tomorrow_appointments": agenda_tomorrow_appointments,
         "agenda_upcoming_appointments": agenda_upcoming_appointments,
         "appointment_history": appointment_history,
+        "appointment_history_total": appointment_history_total,
         "supply_sales": supply_sales,
         "today_supply_sales": today_supply_sales,
-        "bot_settings_by_shop": {shop.id: get_or_create_bot_settings(session, shop.id) for shop in shops},
+        "bot_settings_by_shop": get_or_create_bot_settings_map(session, [shop.id for shop in shops]),
+        "business_category_labels": CATEGORY_LABELS,
+        "bot_category_defaults_by_shop": {
+            shop.id: factory_defaults_for_category(shop.business_category) for shop in shops
+        },
+        "bot_alias_overrides_by_shop": {
+            shop.id: [alias for alias in all_alias_overrides if alias.barber_shop_id == shop.id]
+            for shop in shops
+        },
         "bot_ai_provider": settings.bot_ai_provider,
         "ollama_model": settings.ollama_model,
         "dashboard_filters": {
@@ -496,9 +539,9 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "stats": {
             "shops": len(shops),
             "active_shops": len([shop for shop in shops if barber_shop_has_access(shop)]),
-            "appointments": len(appointments),
+            "appointments": total_filtered_appointments,
             "active_appointments": len(active_appointments),
-            "history_appointments": len(appointment_history),
+            "history_appointments": appointment_history_total,
             "paid_appointments": len(paid_appointments),
             "revenue": appointment_revenue + supply_revenue,
             "completed_revenue": completed_appointment_revenue,
@@ -533,7 +576,10 @@ def _customer_appointments_context(
     if selected_customer is not None:
         confirmed_appointments = list(
             session.scalars(
-                select(Appointment).where(
+                select(Appointment).options(
+                    joinedload(Appointment.service),
+                    joinedload(Appointment.barber),
+                ).where(
                     Appointment.customer_id == selected_customer.id,
                     Appointment.status == AppointmentStatus.CONFIRMED.value,
                 ).order_by(Appointment.starts_at)
@@ -552,7 +598,7 @@ def _customer_appointments_context(
 
 def _first_barber_for_service(session: Session, service: Service) -> Barber | None:
     barbers = session.scalars(
-        select(Barber).where(
+        select(Barber).options(selectinload(Barber.services)).where(
             Barber.barber_shop_id == service.barber_shop_id,
             Barber.is_active.is_(True),
         ).order_by(Barber.id)
@@ -577,11 +623,8 @@ def _bot_simulator_shop_id(request: Request, session: Session) -> int | None:
     return shop.id if shop is not None else None
 
 
-def _bot_context_for(barber_shop_id: int, from_phone: str) -> BotConversationContext:
-    key = (barber_shop_id, from_phone.strip())
-    if key not in BOT_SIMULATOR_CONTEXTS:
-        BOT_SIMULATOR_CONTEXTS[key] = BotConversationContext(barber_shop_id=barber_shop_id)
-    return BOT_SIMULATOR_CONTEXTS[key]
+def _bot_context_for(session: Session, barber_shop_id: int, from_phone: str) -> BotConversationContext:
+    return load_bot_conversation_context(session, barber_shop_id, from_phone)
 
 
 def _bot_quick_actions(
@@ -755,6 +798,7 @@ def login_submit(
     session: Session = Depends(get_db),
 ):
     if is_rate_limited(
+        session,
         f"login:{_client_host(request)}",
         settings.login_rate_limit_per_minute,
     ):
@@ -1262,6 +1306,24 @@ def admin_edit_service(
     service.price = price
     session.commit()
     return _redirect_to("/admin")
+
+
+@router.post("/admin/services/{service_id}/toggle")
+def admin_toggle_service(
+    request: Request,
+    service_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    service = session.get(Service, service_id)
+    if service is None:
+        return _redirect_to("/admin?module=servicios")
+    redirect = _redirect_if_shop_not_allowed(request, session, service.barber_shop_id)
+    if redirect is not None:
+        return redirect
+
+    service.is_active = not service.is_active
+    session.commit()
+    return _redirect_to("/admin?module=servicios")
 
 
 @router.post("/admin/barbers")
@@ -2005,7 +2067,9 @@ def admin_update_bot_settings(
     reminders_enabled: str = Form(...),
     reminder_hours_before: int = Form(...),
     greeting_message: str = Form(...),
+    menu_message: str = Form(...),
     reminder_template: str = Form(...),
+    business_category: str = Form(default="general"),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
@@ -2018,16 +2082,70 @@ def admin_update_bot_settings(
             "El recordatorio debe configurarse entre 1 y 168 horas.",
             selected_module="configuracion",
         )
-    update_bot_settings(
-        session,
-        barber_shop_id=barber_shop_id,
-        bot_enabled=bot_enabled == "true",
-        reminders_enabled=reminders_enabled == "true",
-        reminder_hours_before=reminder_hours_before,
-        greeting_message=greeting_message,
-        reminder_template=reminder_template,
-    )
-    return _redirect_to("/admin")
+    try:
+        set_business_category(session, barber_shop_id, business_category)
+        update_bot_settings(
+            session,
+            barber_shop_id=barber_shop_id,
+            bot_enabled=bot_enabled == "true",
+            reminders_enabled=reminders_enabled == "true",
+            reminder_hours_before=reminder_hours_before,
+            greeting_message=greeting_message,
+            menu_message=menu_message,
+            reminder_template=reminder_template,
+        )
+    except SchedulingError as exc:
+        return _admin_error_response(request, session, exc.detail, selected_module="configuracion")
+    return _redirect_to("/admin?module=configuracion")
+
+
+@router.post("/admin/bot-aliases/{barber_shop_id}")
+def admin_save_bot_alias(
+    request: Request,
+    barber_shop_id: int,
+    service_id: int = Form(...),
+    alias: str = Form(...),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    try:
+        save_service_alias(session, barber_shop_id, service_id, alias)
+    except SchedulingError as exc:
+        return _admin_error_response(request, session, exc.detail, selected_module="configuracion")
+    return _redirect_to("/admin?module=configuracion")
+
+
+@router.post("/admin/bot-aliases/{barber_shop_id}/suppress")
+def admin_suppress_bot_alias(
+    request: Request,
+    barber_shop_id: int,
+    alias: str = Form(...),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    suppress_default_alias(session, barber_shop_id, alias)
+    return _redirect_to("/admin?module=configuracion")
+
+
+@router.post("/admin/bot-aliases/{barber_shop_id}/{alias_id}/delete")
+def admin_delete_bot_alias(
+    request: Request,
+    barber_shop_id: int,
+    alias_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    try:
+        delete_alias_override(session, barber_shop_id, alias_id)
+    except SchedulingError as exc:
+        return _admin_error_response(request, session, exc.detail, selected_module="configuracion")
+    return _redirect_to("/admin?module=configuracion")
 
 
 @router.post("/admin/reminders/{appointment_id}/simulate")
@@ -2070,7 +2188,7 @@ def admin_simulate_reminder(
 @router.get("/bot-simulator")
 def bot_simulator(request: Request, session: Session = Depends(get_db)):
     bot_shop_id = _bot_simulator_shop_id(request, session)
-    bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
+    bot_context = _bot_context_for(session, bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
     return _panel_template_response(
         request,
         "bot/simulator.html",
@@ -2117,7 +2235,7 @@ def bot_simulator_reset(
 ) -> RedirectResponse:
     bot_shop_id = _bot_simulator_shop_id(request, session)
     if bot_shop_id is not None:
-        BOT_SIMULATOR_CONTEXTS.pop((bot_shop_id, from_phone.strip()), None)
+        clear_bot_conversation_context(session, bot_shop_id, from_phone)
     return _redirect_to("/bot-simulator")
 
 
@@ -2130,7 +2248,7 @@ def bot_simulator_availability(
     session: Session = Depends(get_db),
 ):
     bot_shop_id = _bot_simulator_shop_id(request, session)
-    bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
+    bot_context = _bot_context_for(session, bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
     try:
         resource_error = _bot_simulator_resource_error(request, session, barber_id, service_id)
         if resource_error is not None:
@@ -2148,6 +2266,7 @@ def bot_simulator_availability(
         if bot_context is not None:
             bot_context.service_id = service_id
             bot_context.last_target_date = target_date
+            save_bot_conversation_context(session, bot_shop_id, BOT_SIMULATOR_FROM_PHONE, bot_context)
     except SchedulingError as exc:
         slots = []
         messages = [("client", f"Quiero un turno el {target_date.isoformat()}"), ("bot", exc.detail)]
@@ -2178,7 +2297,7 @@ def bot_simulator_book(
     session: Session = Depends(get_db),
 ):
     bot_shop_id = _bot_simulator_shop_id(request, session)
-    bot_context = _bot_context_for(bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
+    bot_context = _bot_context_for(session, bot_shop_id, BOT_SIMULATOR_FROM_PHONE) if bot_shop_id is not None else None
     messages = [("client", f"Reservar {starts_at:%Y-%m-%d %H:%M}")]
     try:
         resource_error = _bot_simulator_resource_error(request, session, barber_id, service_id)
@@ -2194,6 +2313,7 @@ def bot_simulator_book(
         update_appointment_status(session, appointment.id, AppointmentStatus.CONFIRMED)
         if bot_context is not None:
             bot_context.last_target_date = appointment.starts_at.date()
+            save_bot_conversation_context(session, bot_shop_id, BOT_SIMULATOR_FROM_PHONE, bot_context)
         messages.append(("bot", f"Listo, turno #{appointment.id} confirmado y reflejado en Gestion."))
     except SchedulingError as exc:
         messages.append(("bot", exc.detail))
@@ -2213,7 +2333,7 @@ def bot_simulator_message(
     session: Session = Depends(get_db),
 ):
     bot_shop_id = _bot_simulator_shop_id(request, session)
-    bot_context = _bot_context_for(bot_shop_id, from_phone) if bot_shop_id is not None else None
+    bot_context = _bot_context_for(session, bot_shop_id, from_phone) if bot_shop_id is not None else None
     if bot_shop_id is None:
         messages = [("client", message), ("bot", "Crea un negocio activo antes de usar el simulador.")]
     else:
@@ -2249,6 +2369,7 @@ def bot_webhook(
         raise HTTPException(status_code=HTTPStatus.UNAUTHORIZED, detail="La clave del webhook no es valida.")
     business_number = payload.to_business_number.strip()
     if is_rate_limited(
+        session,
         f"bot-webhook:{_client_host(request)}",
         settings.bot_webhook_rate_limit_per_minute,
     ):
@@ -2264,7 +2385,7 @@ def bot_webhook(
     if shop is None:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="El numero del negocio no esta configurado.")
 
-    context = _bot_context_for(shop.id, payload.from_phone)
+    context = _bot_context_for(session, shop.id, payload.from_phone)
     messages = process_bot_message(
         session,
         payload.message,

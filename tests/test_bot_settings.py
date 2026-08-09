@@ -1,14 +1,45 @@
 from datetime import UTC, datetime, time, timedelta
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
-from app.services.bot_settings import _as_naive_datetime
+from app.models import BarberShop, BotSettings
+from app.services.bot_settings import _as_naive_datetime, get_or_create_bot_settings_map
 
 
 def test_reminders_normalize_postgres_timezone_datetimes() -> None:
     postgres_value = datetime(2026, 8, 3, 20, 30, tzinfo=UTC)
 
     assert _as_naive_datetime(postgres_value) == datetime(2026, 8, 3, 20, 30)
+
+
+def test_bot_settings_for_multiple_shops_are_loaded_in_one_query(db_session: Session) -> None:
+    shops = [BarberShop(name=f"Negocio {index}") for index in range(3)]
+    db_session.add_all(shops)
+    db_session.flush()
+    shop_ids = [shop.id for shop in shops]
+    db_session.add_all(BotSettings(barber_shop_id=shop.id) for shop in shops)
+    db_session.commit()
+
+    select_count = 0
+
+    def count_selects(orm_execute_state) -> None:
+        nonlocal select_count
+        if orm_execute_state.is_select:
+            select_count += 1
+
+    event.listen(db_session, "do_orm_execute", count_selects)
+    try:
+        settings_by_shop = get_or_create_bot_settings_map(
+            db_session,
+            shop_ids,
+        )
+    finally:
+        event.remove(db_session, "do_orm_execute", count_selects)
+
+    assert set(settings_by_shop) == set(shop_ids)
+    assert select_count == 1
 
 
 def test_bot_settings_can_disable_bot(client: TestClient) -> None:
@@ -31,6 +62,26 @@ def test_bot_settings_can_disable_bot(client: TestClient) -> None:
     bot_response = client.post("/bot-simulator/message", data={"message": "servicios"})
     assert bot_response.status_code == 200
     assert "El bot esta desactivado" in bot_response.text
+
+
+def test_bot_uses_configured_menu_message(client: TestClient) -> None:
+    shop = client.post("/api/barber-shops", json={"name": "Menu propio"}).json()
+    response = client.put(
+        f"/api/barber-shops/{shop['id']}/bot-settings",
+        json={
+            "bot_enabled": True,
+            "reminders_enabled": False,
+            "reminder_hours_before": 24,
+            "greeting_message": "Hola desde el estudio.",
+            "menu_message": "1. Reservar | 2. Consultar | 3. Cambiar turno",
+            "reminder_template": "Turno de {customer_name}",
+        },
+    )
+
+    assert response.status_code == 200
+    bot_response = client.post("/bot-simulator/message", data={"message": "hola"})
+    assert "Hola desde el estudio." in bot_response.text
+    assert "1. Reservar | 2. Consultar | 3. Cambiar turno" in bot_response.text
 
 
 def test_pending_reminders_are_generated_from_real_appointments(client: TestClient) -> None:

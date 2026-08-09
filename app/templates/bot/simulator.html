@@ -27,12 +27,12 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="col-12">
           <select class="form-select" name="barber_id" required>
-            {% for barber in barbers %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
+            {% for barber in barbers if barber.is_active %}<option value="{{ barber.id }}">{{ barber.name }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-12">
           <select class="form-select" name="service_id" required>
-            {% for service in services %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}
+            {% for service in services if service.is_active %}<option value="{{ service.id }}">{{ service.name }}</option>{% endfor %}
           </select>
         </div>
         <div class="col-12">

@@ -1,25 +1,48 @@
 from __future__ import annotations
 
-import time
-from collections import defaultdict, deque
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import delete, func, select, text
+from sqlalchemy.orm import Session
+
+from app.models import RateLimitEvent
 
 WINDOW_SECONDS = 60
-_events: dict[str, deque[float]] = defaultdict(deque)
 
 
-def is_rate_limited(key: str, limit: int, now: float | None = None) -> bool:
-    current_time = time.time() if now is None else now
-    events = _events[key]
+def is_rate_limited(
+    session: Session,
+    key: str,
+    limit: int,
+    now: datetime | None = None,
+) -> bool:
+    current_time = now or datetime.now(UTC)
+    threshold = current_time - timedelta(seconds=WINDOW_SECONDS)
 
-    while events and events[0] <= current_time - WINDOW_SECONDS:
-        events.popleft()
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
 
-    if len(events) >= limit:
+    session.execute(
+        delete(RateLimitEvent).where(
+            RateLimitEvent.key == key,
+            RateLimitEvent.created_at <= threshold,
+        )
+    )
+    event_count = session.scalar(
+        select(func.count(RateLimitEvent.id)).where(
+            RateLimitEvent.key == key,
+            RateLimitEvent.created_at > threshold,
+        )
+    ) or 0
+    if event_count >= limit:
+        session.commit()
         return True
 
-    events.append(current_time)
+    session.add(RateLimitEvent(key=key, created_at=current_time))
+    session.commit()
     return False
 
 
-def reset_rate_limits() -> None:
-    _events.clear()
+def reset_rate_limits(session: Session) -> None:
+    session.execute(delete(RateLimitEvent))
+    session.commit()

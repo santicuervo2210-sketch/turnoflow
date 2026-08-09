@@ -9,11 +9,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 import app.models  # noqa: F401
+from app.core.config import normalize_database_url
 from app.db.base import Base
 from app.models import Appointment, Barber, BarberShop, Customer, Service, WorkingSchedule
 
 
-POSTGRES_TEST_URL = os.environ.get("TEST_POSTGRES_DATABASE_URL")
+POSTGRES_TEST_URL = (
+    normalize_database_url(os.environ["TEST_POSTGRES_DATABASE_URL"])
+    if os.environ.get("TEST_POSTGRES_DATABASE_URL")
+    else None
+)
 
 pytestmark = pytest.mark.skipif(
     not POSTGRES_TEST_URL,
@@ -26,12 +31,12 @@ pytestmark = pytest.mark.skipif(
 
 def test_postgres_exclusion_constraint_rejects_concurrent_overlapping_appointments() -> None:
     schema_name = f"turnoflow_test_{uuid.uuid4().hex}"
-    admin_engine = create_engine(POSTGRES_TEST_URL)
+    admin_engine = create_engine(POSTGRES_TEST_URL, connect_args={"prepare_threshold": None})
 
     with admin_engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema_name}"'))
 
-    engine = create_engine(POSTGRES_TEST_URL)
+    engine = create_engine(POSTGRES_TEST_URL, connect_args={"prepare_threshold": None})
 
     @event.listens_for(engine, "connect")
     def set_search_path(dbapi_connection, connection_record) -> None:

@@ -1008,6 +1008,88 @@ def test_admin_appointment_form_scopes_catalog_options_by_shop(client: TestClien
     assert "syncAppointmentCatalog" in response.text
 
 
+def test_admin_can_deactivate_and_reactivate_service(client: TestClient) -> None:
+    shop = client.post("/api/barber-shops", json={"name": "Servicios activos"}).json()
+    service = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop["id"],
+            "name": "Servicio temporal",
+            "duration_minutes": 30,
+            "price": "12000.00",
+        },
+    ).json()
+
+    response = client.post(f"/admin/services/{service['id']}/toggle", follow_redirects=True)
+
+    assert response.status_code == 200
+    assert "Inactivo" in response.text
+    assert f'value="{service["id"]}" data-shop-id="{shop["id"]}" data-duration' not in response.text
+    bot_response = client.post("/bot-simulator/message", data={"message": "servicios"})
+    assert "Servicio temporal" not in bot_response.text
+
+    client.post(f"/admin/services/{service['id']}/toggle")
+    active_bot_response = client.post("/bot-simulator/message", data={"message": "servicios"})
+    assert "Servicio temporal" in active_bot_response.text
+
+
+def test_admin_configures_bot_category_menu_and_scoped_alias(client: TestClient) -> None:
+    shop_a = client.post("/api/barber-shops", json={"name": "Spa A"}).json()
+    shop_b = client.post("/api/barber-shops", json={"name": "Spa B"}).json()
+    service_a = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_a["id"],
+            "name": "Descontracturante",
+            "duration_minutes": 60,
+            "price": "22000.00",
+        },
+    ).json()
+    service_b = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_b["id"],
+            "name": "Relajante",
+            "duration_minutes": 60,
+            "price": "20000.00",
+        },
+    ).json()
+
+    settings_response = client.post(
+        f"/admin/bot-settings/{shop_a['id']}",
+        data={
+            "bot_enabled": "true",
+            "reminders_enabled": "false",
+            "reminder_hours_before": "24",
+            "greeting_message": "Hola desde Spa A",
+            "menu_message": "1. Reservar masaje | 2. Ver mi turno",
+            "reminder_template": "Turno de {customer_name}",
+            "business_category": "masajes",
+        },
+        follow_redirects=False,
+    )
+    assert settings_response.status_code == 303
+    assert client.get("/api/barber-shops").json()[0]["business_category"] == "masajes"
+
+    alias_response = client.post(
+        f"/admin/bot-aliases/{shop_a['id']}",
+        data={"service_id": str(service_a["id"]), "alias": "espalda cargada"},
+        follow_redirects=False,
+    )
+    assert alias_response.status_code == 303
+
+    cross_shop_response = client.post(
+        f"/admin/bot-aliases/{shop_a['id']}",
+        data={"service_id": str(service_b["id"]), "alias": "no permitido"},
+    )
+    assert cross_shop_response.status_code == 400
+    assert "no pertenece al negocio" in cross_shop_response.text
+
+    dashboard = client.get("/admin?module=configuracion")
+    assert "1. Reservar masaje | 2. Ver mi turno" in dashboard.text
+    assert "espalda cargada" in dashboard.text
+
+
 def test_admin_can_edit_core_management_records(client: TestClient) -> None:
     shop_response = client.post("/api/barber-shops", json={"name": "Edit Demo"})
     shop_id = shop_response.json()["id"]

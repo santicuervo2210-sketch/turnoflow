@@ -27,6 +27,10 @@ def test_initial_model_tables_are_registered() -> None:
         "services",
         "supply_sales",
         "working_schedules",
+        "bot_category_defaults",
+        "bot_service_aliases",
+        "bot_conversation_states",
+        "rate_limit_events",
     }
 
     assert expected_tables.issubset(Base.metadata.tables.keys())

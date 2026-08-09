@@ -5,11 +5,20 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.models import Appointment, AppointmentStatus, Barber, BarberShop, BotSettings, Customer, Service
+from app.models import (
+    Appointment,
+    AppointmentStatus,
+    Barber,
+    BarberShop,
+    BotConversationState,
+    BotSettings,
+    Customer,
+    Service,
+)
 from app.services.ai_bot import BotIntent, classify_with_ai
 from app.services.appointments import (
     SchedulingError,
@@ -20,6 +29,8 @@ from app.services.appointments import (
     get_available_slots,
     reschedule_appointment,
 )
+from app.services.bot_categories import aliases_by_service
+from app.models.bot_settings import DEFAULT_MENU_MESSAGE
 
 BotMessages = list[tuple[str, str]]
 PRICE_WORDS = (
@@ -32,13 +43,6 @@ PRICE_WORDS = (
     "cobras",
     "tarifa",
 )
-SERVICE_ALIASES = {
-    "corte": ("corte", "cortar", "cortarme", "pelo", "cabello"),
-    "barba": ("barba", "afeitado", "afeitarme"),
-    "unas": ("unas", "manicura", "manos", "nails"),
-    "pestanas": ("pestanas", "pestana", "lashes"),
-    "claritos": ("claritos", "mechas", "reflejos"),
-}
 GREETING_WORDS = ("hola", "buenas", "buen dia", "buenas tardes", "buenas noches")
 AVAILABILITY_WORDS = (
     "dia",
@@ -97,6 +101,64 @@ class BotConversationContext:
         self.flow = None
 
 
+def load_bot_conversation_context(
+    session: Session,
+    barber_shop_id: int,
+    from_phone: str,
+) -> BotConversationContext:
+    phone = from_phone.strip()
+    state = session.scalars(
+        select(BotConversationState).where(
+            BotConversationState.barber_shop_id == barber_shop_id,
+            BotConversationState.phone == phone,
+        )
+    ).first()
+    if state is None:
+        return BotConversationContext(barber_shop_id=barber_shop_id)
+    return BotConversationContext(
+        barber_shop_id=barber_shop_id,
+        service_id=state.service_id,
+        customer_id=state.customer_id,
+        last_target_date=state.last_target_date,
+        flow=state.flow,
+    )
+
+
+def save_bot_conversation_context(
+    session: Session,
+    barber_shop_id: int,
+    from_phone: str,
+    context: BotConversationContext,
+) -> None:
+    phone = from_phone.strip()
+    state = session.scalars(
+        select(BotConversationState).where(
+            BotConversationState.barber_shop_id == barber_shop_id,
+            BotConversationState.phone == phone,
+        )
+    ).first()
+    if state is None:
+        state = BotConversationState(barber_shop_id=barber_shop_id, phone=phone)
+        session.add(state)
+    state.service_id = context.service_id
+    state.customer_id = context.customer_id
+    state.last_target_date = context.last_target_date
+    state.flow = context.flow
+    session.commit()
+
+
+def clear_bot_conversation_context(session: Session, barber_shop_id: int, from_phone: str) -> None:
+    state = session.scalars(
+        select(BotConversationState).where(
+            BotConversationState.barber_shop_id == barber_shop_id,
+            BotConversationState.phone == from_phone.strip(),
+        )
+    ).first()
+    if state is not None:
+        session.delete(state)
+        session.commit()
+
+
 def _format_money(value) -> str:
     return f"${value}"
 
@@ -151,59 +213,48 @@ def _looks_like_price_question(message: str) -> bool:
     return any(word in message for word in PRICE_WORDS)
 
 
-def _service_matches_message(service: Service, message: str) -> bool:
+def _service_match_score(service: Service, message: str, aliases: set[str]) -> int:
     service_name = _normalize_text(service.name)
     service_words = [word for word in re.findall(r"\w+", service_name) if len(word) >= 3]
-
-    if service_name and service_name in message:
-        return True
-
-    if any(word in message for word in service_words):
-        return True
-
-    for alias_key, aliases in SERVICE_ALIASES.items():
-        if alias_key in service_name and any(alias in message for alias in aliases):
-            return True
-
-    return False
-
-
-def _message_mentions_alias(message: str, alias_key: str) -> bool:
-    return any(alias in message for alias in SERVICE_ALIASES[alias_key])
+    mentioned_words = sum(word in message for word in service_words)
+    all_words_mentioned = bool(service_words) and mentioned_words == len(service_words)
+    alias_mentioned = any(alias in message for alias in aliases)
+    if not mentioned_words and not alias_mentioned:
+        return 0
+    return mentioned_words + (2 if all_words_mentioned else 0) + (1 if alias_mentioned else 0)
 
 
 def _format_service_line(service: Service) -> str:
     return f"#{service.id} {service.name} - {service.duration_minutes} min - {_format_money(service.price)}"
 
 
-def _choose_preferred_service(services: list[Service], message: str) -> Service | None:
-    service_by_name = {_normalize_text(service.name): service for service in services}
-    mentions_cut = _message_mentions_alias(message, "corte")
-    mentions_claritos = _message_mentions_alias(message, "claritos")
-
-    if mentions_cut and mentions_claritos and "corte + claritos" in service_by_name:
-        return service_by_name["corte + claritos"]
-
-    if mentions_claritos and not mentions_cut and "claritos" in service_by_name:
-        return service_by_name["claritos"]
-
-    if mentions_cut and not mentions_claritos and "corte" in service_by_name:
-        return service_by_name["corte"]
-
-    return None
+def _matching_services(
+    session: Session,
+    services: list[Service],
+    message: str,
+    barber_shop_id: int,
+) -> list[Service]:
+    shop = session.get(BarberShop, barber_shop_id)
+    if shop is None:
+        return []
+    aliases = aliases_by_service(session, shop, services)
+    scored = [
+        (service, _service_match_score(service, message, aliases.get(service.id, set())))
+        for service in services
+    ]
+    positive = [(service, score) for service, score in scored if score > 0]
+    if not positive:
+        return []
+    best_score = max(score for _, score in positive)
+    return [service for service, score in positive if score == best_score]
 
 
 def _find_service_from_message(session: Session, message: str, barber_shop_id: int) -> Service | None:
     services = _active_services(session, barber_shop_id)
-    matching_services = [service for service in services if _service_matches_message(service, message)]
+    matching_services = _matching_services(session, services, message, barber_shop_id)
 
     if len(matching_services) == 1:
         return matching_services[0]
-
-    if len(matching_services) > 1:
-        preferred_service = _choose_preferred_service(matching_services, message)
-        if preferred_service is not None:
-            return preferred_service
 
     if not matching_services and len(services) == 1:
         return services[0]
@@ -243,12 +294,7 @@ def _handle_price_question(
     if not services:
         return [("bot", "Todavia no hay servicios cargados para consultar precios.")]
 
-    matching_services = [service for service in services if _service_matches_message(service, message)]
-
-    if len(matching_services) > 1:
-        preferred_service = _choose_preferred_service(matching_services, message)
-        if preferred_service is not None:
-            matching_services = [preferred_service]
+    matching_services = _matching_services(session, services, message, barber_shop_id)
 
     if not matching_services and context is not None and context.service_id is not None:
         service = _service_for_shop(session, context.service_id, barber_shop_id)
@@ -291,7 +337,7 @@ def _looks_like_service_interest(message: str) -> bool:
 
 def _find_barber_for_service(session: Session, service: Service, message: str) -> Barber | None:
     barbers = session.scalars(
-        select(Barber).where(
+        select(Barber).options(selectinload(Barber.services)).where(
             Barber.barber_shop_id == service.barber_shop_id,
             Barber.is_active.is_(True),
         ).order_by(Barber.id)
@@ -1000,13 +1046,7 @@ def _main_menu_text(session: Session, barber_shop_id: int, *, include_greeting: 
     if settings is not None and settings.greeting_message.strip():
         greeting = settings.greeting_message.strip()
 
-    menu = (
-        "Que queres hacer? "
-        "1. Ver servicios y precios | "
-        "2. Sacar un turno | "
-        "3. Consultar mi turno | "
-        "4. Cancelar o reprogramar"
-    )
+    menu = settings.menu_message.strip() if settings is not None and settings.menu_message.strip() else DEFAULT_MENU_MESSAGE
     return f"{greeting} {menu}" if include_greeting else menu
 
 
@@ -1110,12 +1150,12 @@ def _handle_menu_navigation(
     return None
 
 
-def process_bot_message(
+def _process_bot_message_in_context(
     session: Session,
     message: str,
     barber_shop_id: int,
     from_phone: str,
-    context: BotConversationContext | None = None,
+    context: BotConversationContext,
 ) -> BotMessages:
     normalized = _normalize_text(message)
     if not normalized:
@@ -1123,8 +1163,7 @@ def process_bot_message(
     if not from_phone.strip():
         return [("bot", "Necesito el telefono del remitente para poder ayudarte.")]
 
-    if context is not None:
-        context.barber_shop_id = barber_shop_id
+    context.barber_shop_id = barber_shop_id
 
     if not _has_enabled_bot(session, barber_shop_id):
         return [("bot", "El bot esta desactivado para este negocio.")]
@@ -1241,3 +1280,35 @@ def process_bot_message(
             "No entendi ese mensaje. Escribi menu para ver las opciones disponibles.",
         )
     ]
+
+
+def process_bot_message(
+    session: Session,
+    message: str,
+    barber_shop_id: int,
+    from_phone: str,
+    context: BotConversationContext | None = None,
+) -> BotMessages:
+    if not from_phone.strip():
+        active_context = context or BotConversationContext(barber_shop_id=barber_shop_id)
+        return _process_bot_message_in_context(session, message, barber_shop_id, from_phone, active_context)
+
+    uses_postgres_lock = session.get_bind().dialect.name == "postgresql"
+    lock_key = f"bot:{barber_shop_id}:{from_phone.strip()}"
+    if uses_postgres_lock:
+        session.execute(text("SELECT pg_advisory_lock(hashtext(:key))"), {"key": lock_key})
+    active_context = context or load_bot_conversation_context(session, barber_shop_id, from_phone)
+    try:
+        messages = _process_bot_message_in_context(
+            session,
+            message,
+            barber_shop_id,
+            from_phone,
+            active_context,
+        )
+        save_bot_conversation_context(session, barber_shop_id, from_phone, active_context)
+        return messages
+    finally:
+        if uses_postgres_lock:
+            session.execute(text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": lock_key})
+            session.commit()

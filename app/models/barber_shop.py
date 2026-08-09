@@ -23,6 +23,10 @@ class BarberShop(TimestampMixin, Base):
     __tablename__ = "barber_shops"
     __table_args__ = (
         CheckConstraint("plan IN ('basic', 'premium')", name="ck_barber_shops_plan"),
+        CheckConstraint(
+            "business_category IN ('barberia', 'unas', 'pestanas', 'masajes', 'tatuajes', 'general')",
+            name="ck_barber_shops_business_category",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -39,6 +43,12 @@ class BarberShop(TimestampMixin, Base):
         String(20),
         default="basic",
         server_default="basic",
+        nullable=False,
+    )
+    business_category: Mapped[str] = mapped_column(
+        String(20),
+        default="general",
+        server_default="general",
         nullable=False,
     )
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -4,6 +4,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.appointment_status import AppointmentStatus
+from app.models.bot_settings import DEFAULT_MENU_MESSAGE
 
 
 class BarberShopCreate(BaseModel):
@@ -18,6 +19,7 @@ class BarberShopRead(BarberShopCreate):
     id: int
     access_status: str
     plan: str
+    business_category: str
     suspended_at: datetime | None
     suspension_reason: str | None
     trial_ends_at: datetime | None
@@ -32,6 +34,7 @@ class BotSettingsUpdate(BaseModel):
     reminders_enabled: bool = True
     reminder_hours_before: int = Field(default=24, ge=1, le=168)
     greeting_message: str = Field(min_length=1)
+    menu_message: str = Field(default=DEFAULT_MENU_MESSAGE, min_length=1)
     reminder_template: str = Field(min_length=1)
 
 

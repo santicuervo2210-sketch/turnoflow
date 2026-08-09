@@ -47,6 +47,7 @@ Notas:
 
 - `DATABASE_URL` puede venir como `postgres://`, `postgresql://` o `postgresql+psycopg://`.
 - La app lo normaliza internamente para SQLAlchemy.
+- Psycopg desactiva los prepared statements del cliente para ser compatible con Supavisor/PgBouncer.
 - No uses SQLite en deploy.
 - No actives `AUTO_CREATE_TABLES` en produccion; usa Alembic.
 - `SESSION_SECRET` debe tener minimo 32 caracteres y no debe compartirse.
@@ -73,7 +74,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260809_0010`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260809_0012`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -130,7 +131,7 @@ TurnoFlow quedo conectado a Supabase como PostgreSQL gestionado, sin usar todavi
 - Region: `sa-east-1`.
 - Dashboard: `https://supabase.com/dashboard/project/fyyycgvjqfitvpalwvkn`.
 - Estado verificado por CLI: `ACTIVE_HEALTHY`.
-- Revision Alembic aplicada: `20260809_0010`.
+- Revision Alembic aplicada y verificada: `20260809_0012`.
 
 La variable `DATABASE_URL` local esta en `.env` y apunta a la conexion directa:
 
@@ -171,8 +172,8 @@ Notas:
 - No uses SQLite en Vercel.
 - Cada negocio nuevo recibe 15 dias de prueba. Desde Owner se puede extender la prueba, suspender el acceso o marcarlo como pago/activo.
 - El bot por reglas y el webhook pueden responder cuando alguien escribe.
-- Los flujos con contexto en memoria pueden reiniciarse entre invocaciones serverless; para demo alcanza, pero para WhatsApp productivo conviene persistir el estado del bot en base de datos o usar un backend persistente.
-- Las migraciones Alembic ya fueron aplicadas en Supabase; si se agregan nuevas migraciones, correrlas antes de redeployar.
+- El contexto del bot y el rate limiting se guardan en PostgreSQL, por lo que sobreviven a invocaciones serverless distintas.
+- Las migraciones Alembic hasta `20260809_0012` fueron aplicadas en Supabase el 9 de agosto de 2026; si se agregan nuevas migraciones, correrlas antes de redeployar.
 
 ## Pasos en InsForge
 
@@ -229,7 +230,7 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `BOT_WEBHOOK_SECRET` tiene al menos 32 caracteres aleatorios y se envia en `X-TurnoFlow-Webhook-Secret`.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
-- [ ] `python -m alembic current` muestra `20260809_0010`.
+- [ ] `python -m alembic current` muestra `20260809_0012`.
 - [ ] `python -m app.create_owner` ejecutado.
 - [ ] `python -m app.check_production` devuelve OK.
 - [ ] Datos demo o datos reales iniciales cargados.

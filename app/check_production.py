@@ -7,7 +7,7 @@ from app.db.session import build_engine
 from app.models import User, UserRole
 from app.db.session import SessionLocal
 
-LATEST_ALEMBIC_REVISION = "20260809_0010"
+LATEST_ALEMBIC_REVISION = "20260809_0012"
 
 
 def _fail(message: str) -> None:
