@@ -7,6 +7,8 @@ from http import HTTPStatus
 from urllib.parse import parse_qs
 
 from fastapi import Request
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse, Response
 from starlette.types import ASGIApp
@@ -14,6 +16,7 @@ from starlette.types import ASGIApp
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models import User, UserRole
+from app.services.appointments import barber_shop_has_access
 
 SESSION_COOKIE_NAME = "turnoflow_session"
 OWNER_RETURN_COOKIE_NAME = "turnoflow_owner_return"
@@ -115,11 +118,13 @@ def is_active_session_subject(subject: str) -> bool:
         return False
 
     with SessionLocal() as session:
-        user = session.get(User, user_id)
+        user = session.scalars(
+            select(User).options(joinedload(User.barber_shop)).where(User.id == user_id)
+        ).first()
         if user is None or not user.is_active or user.role != signed_role.value:
             return False
         if signed_role == UserRole.BUSINESS_ADMIN:
-            return user.barber_shop is not None and user.barber_shop.access_status == "active"
+            return user.barber_shop is not None and barber_shop_has_access(user.barber_shop)
         return signed_role == UserRole.OWNER
 
 

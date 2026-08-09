@@ -1,4 +1,4 @@
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from http import HTTPStatus
 import hashlib
@@ -7,9 +7,9 @@ import hmac
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.core.logging import log_unhandled_error
@@ -36,10 +36,12 @@ from app.services.appointments import (
     SchedulingError,
     activate_barber_shop,
     barber_can_perform_service,
+    barber_shop_has_access,
     business_hours_for_shop,
     business_working_days_for_shop,
     cancel_appointment,
     create_appointment,
+    extend_barber_shop_trial,
     get_available_slots,
     mark_appointment_paid,
     mark_appointment_unpaid,
@@ -243,6 +245,19 @@ def _as_naive_datetime(value: datetime) -> datetime:
     return value.replace(tzinfo=None) if value.tzinfo is not None else value
 
 
+def _commercial_status(shop: BarberShop) -> dict[str, object]:
+    if shop.access_status != "active":
+        return {"label": "Suspendido", "class": "suspended", "operational": False}
+    if shop.trial_ends_at is None:
+        return {"label": "Pago / activo", "class": "paid", "operational": True}
+
+    remaining = _as_naive_datetime(shop.trial_ends_at) - _as_naive_datetime(datetime.now(UTC))
+    if remaining.total_seconds() < 0:
+        return {"label": "Prueba vencida", "class": "expired", "operational": False}
+    days = max(1, int((remaining.total_seconds() + 86_399) // 86_400))
+    return {"label": f"Prueba: {days} dias", "class": "trial", "operational": True}
+
+
 def _dashboard_context(request: Request, session: Session, shop_id: int | None = None, **extra):
     shops_query = select(BarberShop).order_by(BarberShop.id)
     if shop_id is not None:
@@ -254,24 +269,41 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     page = _int_query_param(request, "page", default=1, minimum=1, maximum=10_000)
     per_page = _int_query_param(request, "per_page", default=50, minimum=1, maximum=200)
 
+    appointment_relationships = (
+        joinedload(Appointment.customer),
+        joinedload(Appointment.service),
+        joinedload(Appointment.barber),
+    )
     appointments_query = _shop_filter(select(Appointment), shop_id, Appointment)
     if start_date is not None:
         appointments_query = appointments_query.where(Appointment.starts_at >= datetime.combine(start_date, time.min))
     if end_date is not None:
         appointments_query = appointments_query.where(Appointment.starts_at <= datetime.combine(end_date, time.max))
-    total_filtered_appointments = session.scalar(
-        select(func.count()).select_from(appointments_query.order_by(None).subquery())
-    ) or 0
-    appointments = list(
-        session.scalars(
-            appointments_query.order_by(Appointment.starts_at).offset((page - 1) * per_page).limit(per_page)
-        ).all()
-    )
     agenda_appointments = list(
         session.scalars(
-            _shop_filter(select(Appointment).order_by(Appointment.starts_at), shop_id, Appointment)
-        ).all()
+            _shop_filter(
+                select(Appointment).options(*appointment_relationships).order_by(Appointment.starts_at),
+                shop_id,
+                Appointment,
+            )
+        ).unique().all()
     )
+    if start_date is None and end_date is None:
+        total_filtered_appointments = len(agenda_appointments)
+        offset = (page - 1) * per_page
+        appointments = agenda_appointments[offset : offset + per_page]
+    else:
+        total_filtered_appointments = session.scalar(
+            select(func.count()).select_from(appointments_query.order_by(None).subquery())
+        ) or 0
+        appointments = list(
+            session.scalars(
+                appointments_query.options(*appointment_relationships)
+                .order_by(Appointment.starts_at)
+                .offset((page - 1) * per_page)
+                .limit(per_page)
+            ).unique().all()
+        )
     supply_sales = list(
         session.scalars(_shop_filter(select(SupplySale).order_by(SupplySale.id), shop_id, SupplySale)).all()
     )
@@ -345,26 +377,78 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     )
     today_supply_revenue = sum(sale.total_price for sale in today_supply_sales)
     services = list(session.scalars(_shop_filter(select(Service).order_by(Service.id), shop_id, Service)).all())
-    barbers = list(session.scalars(_shop_filter(select(Barber).order_by(Barber.id), shop_id, Barber)).all())
+    barbers = list(
+        session.scalars(
+            _shop_filter(
+                select(Barber).options(joinedload(Barber.services)).order_by(Barber.id),
+                shop_id,
+                Barber,
+            )
+        ).unique().all()
+    )
     customers = list(session.scalars(_shop_filter(select(Customer).order_by(Customer.id), shop_id, Customer)).all())
+    schedules = list(
+        session.scalars(
+            select(WorkingSchedule)
+            .join(WorkingSchedule.barber)
+            .where(Barber.barber_shop_id == shop_id, WorkingSchedule.is_active.is_(True))
+            .order_by(WorkingSchedule.id)
+            if shop_id is not None
+            else select(WorkingSchedule).where(WorkingSchedule.is_active.is_(True)).order_by(WorkingSchedule.id)
+        ).all()
+    )
+    time_blocks = list(
+        session.scalars(
+            select(BarberTimeBlock)
+            .join(BarberTimeBlock.barber)
+            .where(BarberTimeBlock.is_active.is_(True), Barber.barber_shop_id == shop_id)
+            .order_by(BarberTimeBlock.starts_at.desc())
+            if shop_id is not None
+            else select(BarberTimeBlock)
+            .where(BarberTimeBlock.is_active.is_(True))
+            .order_by(BarberTimeBlock.starts_at.desc())
+        ).all()
+    )
+    schedules_by_barber = {
+        barber.id: [schedule for schedule in schedules if schedule.barber_id == barber.id]
+        for barber in barbers
+    }
+    barber_shop_by_barber_id = {barber.id: barber.barber_shop_id for barber in barbers}
+    schedules_by_shop = {
+        shop.id: [
+            schedule
+            for schedule in schedules
+            if barber_shop_by_barber_id.get(schedule.barber_id) == shop.id
+        ]
+        for shop in shops
+    }
+    general_hours_by_shop = {
+        shop.id: (
+            (shop_schedules[0].start_time, shop_schedules[0].end_time)
+            if (shop_schedules := sorted(schedules_by_shop[shop.id], key=lambda item: (item.day_of_week, item.id)))
+            else (DEFAULT_OPENING_TIME, DEFAULT_CLOSING_TIME)
+        )
+        for shop in shops
+    }
+    general_working_days_by_shop = {
+        shop.id: sorted({schedule.day_of_week for schedule in schedules_by_shop[shop.id]}) or list(BUSINESS_WEEKDAYS)
+        for shop in shops
+    }
     context = {
         "request": request,
         "now": now,
         "as_naive_datetime": _as_naive_datetime,
         "shops": shops,
+        "commercial_status_by_shop": {shop.id: _commercial_status(shop) for shop in shops},
         "services": services,
         "barbers": barbers,
         "customers": customers,
-        "general_hours_by_shop": {
-            shop.id: business_hours_for_shop(session, shop.id) for shop in shops
-        },
-        "general_working_days_by_shop": {
-            shop.id: business_working_days_for_shop(session, shop.id) for shop in shops
-        },
+        "general_hours_by_shop": general_hours_by_shop,
+        "general_working_days_by_shop": general_working_days_by_shop,
         "working_days_by_barber": {
             barber.id: sorted(
                 schedule.day_of_week
-                for schedule in barber.working_schedules
+                for schedule in schedules_by_barber[barber.id]
                 if schedule.is_active
             )
             or list(BUSINESS_WEEKDAYS)
@@ -374,36 +458,16 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             barber.id: next(
                 (
                     (schedule.start_time, schedule.end_time)
-                    for schedule in barber.working_schedules
+                    for schedule in schedules_by_barber[barber.id]
                     if schedule.is_active
                 ),
-                business_hours_for_shop(session, barber.barber_shop_id),
+                general_hours_by_shop[barber.barber_shop_id],
             )
             for barber in barbers
         },
         "weekday_labels": ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"),
-        "schedules": list(
-            session.scalars(
-                select(WorkingSchedule)
-                .join(WorkingSchedule.barber)
-                .where(Barber.barber_shop_id == shop_id, WorkingSchedule.is_active.is_(True))
-                .order_by(WorkingSchedule.id)
-                if shop_id is not None
-                else select(WorkingSchedule).where(WorkingSchedule.is_active.is_(True)).order_by(WorkingSchedule.id)
-            ).all()
-        ),
-        "time_blocks": list(
-            session.scalars(
-                select(BarberTimeBlock)
-                .join(BarberTimeBlock.barber)
-                .where(BarberTimeBlock.is_active.is_(True), Barber.barber_shop_id == shop_id)
-                .order_by(BarberTimeBlock.starts_at.desc())
-                if shop_id is not None
-                else select(BarberTimeBlock)
-                .where(BarberTimeBlock.is_active.is_(True))
-                .order_by(BarberTimeBlock.starts_at.desc())
-            ).all()
-        ),
+        "schedules": schedules,
+        "time_blocks": time_blocks,
         "appointments": appointments,
         "active_appointments": active_appointments,
         "agenda_today_appointments": agenda_today_appointments,
@@ -413,11 +477,6 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "supply_sales": supply_sales,
         "today_supply_sales": today_supply_sales,
         "bot_settings_by_shop": {shop.id: get_or_create_bot_settings(session, shop.id) for shop in shops},
-        "pending_reminders": [
-            reminder
-            for reminder in list_pending_reminders(session)
-            if shop_id is None or reminder.barber_shop_id == shop_id
-        ],
         "bot_ai_provider": settings.bot_ai_provider,
         "ollama_model": settings.ollama_model,
         "dashboard_filters": {
@@ -436,7 +495,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "managed_shop": shops[0] if shop_id is not None and shops and _is_owner_request(request, session) else None,
         "stats": {
             "shops": len(shops),
-            "active_shops": len([shop for shop in shops if shop.access_status == "active"]),
+            "active_shops": len([shop for shop in shops if barber_shop_has_access(shop)]),
             "appointments": len(appointments),
             "active_appointments": len(active_appointments),
             "history_appointments": len(appointment_history),
@@ -506,8 +565,14 @@ def _bot_simulator_shop_id(request: Request, session: Session) -> int | None:
     if shop_id is not None:
         return shop_id
 
+    now = datetime.now(UTC)
     shop = session.scalars(
-        select(BarberShop).where(BarberShop.access_status == "active").order_by(BarberShop.id)
+        select(BarberShop)
+        .where(
+            BarberShop.access_status == "active",
+            or_(BarberShop.trial_ends_at.is_(None), BarberShop.trial_ends_at >= now),
+        )
+        .order_by(BarberShop.id)
     ).first()
     return shop.id if shop is not None else None
 
@@ -677,7 +742,7 @@ def login_page(request: Request, next: str | None = None):
     return templates.TemplateResponse(
         request,
         "auth/login.html",
-        {"request": request, "next_path": _safe_next_path(next)},
+        {"request": request, "next_path": _safe_next_path(next), "auth_page": True},
     )
 
 
@@ -710,6 +775,7 @@ def login_submit(
                 "request": request,
                 "next_path": _safe_next_path(next_path),
                 "error": "Usuario o clave incorrectos.",
+                "auth_page": True,
             },
             status_code=HTTPStatus.UNAUTHORIZED,
         )
@@ -725,7 +791,7 @@ def password_reset_page(request: Request, token: str):
     return templates.TemplateResponse(
         request,
         "auth/password_reset.html",
-        {"request": request, "token": token},
+        {"request": request, "token": token, "auth_page": True},
     )
 
 
@@ -741,7 +807,7 @@ def password_reset_submit(
         return templates.TemplateResponse(
             request,
             "auth/password_reset.html",
-            {"request": request, "token": token, "error": "El link no es valido o ya vencio."},
+            {"request": request, "token": token, "error": "El link no es valido o ya vencio.", "auth_page": True},
             status_code=HTTPStatus.BAD_REQUEST,
         )
     return _redirect_to("/login")
@@ -776,12 +842,14 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
         "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
     }
+    shops = list(session.scalars(select(BarberShop).order_by(BarberShop.id)).all())
     return _panel_template_response(
         request,
         "owner/index.html",
         {
             "request": request,
-            "shops": list(session.scalars(select(BarberShop).order_by(BarberShop.id)).all()),
+            "shops": shops,
+            "commercial_status_by_shop": {shop.id: _commercial_status(shop) for shop in shops},
             "users": list(session.scalars(select(User).order_by(User.id)).all()),
             "current_user": _current_user(request, session),
             "is_owner_view": True,
@@ -864,7 +932,7 @@ def owner_impersonate_business_user(
         or not user.is_active
         or user.role != UserRole.BUSINESS_ADMIN.value
         or user.barber_shop is None
-        or user.barber_shop.access_status != "active"
+        or not barber_shop_has_access(user.barber_shop)
         or owner_session_cookie is None
         or owner_subject is None
         or not owner_subject.endswith(f":{UserRole.OWNER.value}")
@@ -1051,6 +1119,19 @@ def admin_activate_barber_shop(request: Request, barber_shop_id: int, session: S
         return redirect
     activate_barber_shop(session, barber_shop_id)
     return _redirect_to("/admin")
+
+
+@router.post("/owner/shops/{barber_shop_id}/trial/extend")
+def owner_extend_barber_shop_trial(
+    request: Request,
+    barber_shop_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+    extend_barber_shop_trial(session, barber_shop_id)
+    return _redirect_to("/owner")
 
 
 @router.post("/admin/barber-shops/{barber_shop_id}/hours")
@@ -2177,6 +2258,7 @@ def bot_webhook(
         select(BarberShop).where(
             BarberShop.phone == business_number,
             BarberShop.access_status == "active",
+            or_(BarberShop.trial_ends_at.is_(None), BarberShop.trial_ends_at >= datetime.now(UTC)),
         )
     ).first()
     if shop is None:

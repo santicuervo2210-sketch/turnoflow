@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models import Appointment, AppointmentStatus, BarberShop, BotSettings
@@ -80,13 +80,15 @@ def list_pending_reminders(
     *,
     now: datetime | None = None,
 ) -> list[ReminderPreview]:
-    current_time = _as_naive_datetime(now or datetime.now(UTC))
+    current_time_utc = now or datetime.now(UTC)
+    current_time = _as_naive_datetime(current_time_utc)
 
     appointments = session.scalars(
         select(Appointment)
         .join(Appointment.barber_shop)
         .where(
             BarberShop.access_status == ACTIVE_ACCESS_STATUS,
+            or_(BarberShop.trial_ends_at.is_(None), BarberShop.trial_ends_at >= current_time_utc),
             Appointment.status.in_(
                 (
                     AppointmentStatus.PENDING.value,

@@ -73,7 +73,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260803_0009`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260809_0010`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -130,7 +130,7 @@ TurnoFlow quedo conectado a Supabase como PostgreSQL gestionado, sin usar todavi
 - Region: `sa-east-1`.
 - Dashboard: `https://supabase.com/dashboard/project/fyyycgvjqfitvpalwvkn`.
 - Estado verificado por CLI: `ACTIVE_HEALTHY`.
-- Revision Alembic aplicada: `20260803_0009`.
+- Revision Alembic aplicada: `20260809_0010`.
 
 La variable `DATABASE_URL` local esta en `.env` y apunta a la conexion directa:
 
@@ -145,7 +145,7 @@ Supabase indica que la conexion directa es ideal para servidores persistentes, p
 Esta opcion sirve para publicar la demo rapido. Vercel corre FastAPI como funciones serverless de Python, por eso el repo incluye:
 
 - `api/index.py`: expone `app.main.app`.
-- `vercel.json`: envia todas las rutas a `api/index.py`.
+- `vercel.json`: envia todas las rutas a `api/index.py` y ejecuta las funciones en `gru1`, cerca de la base de datos de Sao Paulo.
 - `requirements.txt`: dependencias que Vercel instala en build.
 
 Variables obligatorias en Vercel:
@@ -169,6 +169,7 @@ BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE=120
 Notas:
 
 - No uses SQLite en Vercel.
+- Cada negocio nuevo recibe 15 dias de prueba. Desde Owner se puede extender la prueba, suspender el acceso o marcarlo como pago/activo.
 - El bot por reglas y el webhook pueden responder cuando alguien escribe.
 - Los flujos con contexto en memoria pueden reiniciarse entre invocaciones serverless; para demo alcanza, pero para WhatsApp productivo conviene persistir el estado del bot en base de datos o usar un backend persistente.
 - Las migraciones Alembic ya fueron aplicadas en Supabase; si se agregan nuevas migraciones, correrlas antes de redeployar.
@@ -228,7 +229,7 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `BOT_WEBHOOK_SECRET` tiene al menos 32 caracteres aleatorios y se envia en `X-TurnoFlow-Webhook-Secret`.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
-- [ ] `python -m alembic current` muestra `20260803_0009`.
+- [ ] `python -m alembic current` muestra `20260809_0010`.
 - [ ] `python -m app.create_owner` ejecutado.
 - [ ] `python -m app.check_production` devuelve OK.
 - [ ] Datos demo o datos reales iniciales cargados.

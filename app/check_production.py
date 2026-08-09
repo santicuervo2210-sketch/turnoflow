@@ -7,7 +7,7 @@ from app.db.session import build_engine
 from app.models import User, UserRole
 from app.db.session import SessionLocal
 
-LATEST_ALEMBIC_REVISION = "20260803_0009"
+LATEST_ALEMBIC_REVISION = "20260809_0010"
 
 
 def _fail(message: str) -> None:
@@ -26,7 +26,7 @@ def configuration_errors() -> list[str]:
     if settings.admin_password in {"changeme", "change-me-before-deploy"}:
         errors.append("ADMIN_PASSWORD sigue usando un valor de ejemplo.")
 
-    if len(settings.session_secret) < 32 or settings.session_secret == "change-this-secret-before-deploy":
+    if len(settings.session_secret) < 32 or settings.session_secret == "change-this-secret-before-deploy":  # nosec B105
         errors.append("SESSION_SECRET debe ser largo, aleatorio y distinto al ejemplo.")
 
     if not settings.bot_webhook_secret or len(settings.bot_webhook_secret) < 32:

@@ -14,6 +14,7 @@ from app.models import (
     Service,
     WorkingSchedule,
 )
+from app.services.appointments import barber_shop_has_access
 
 
 def test_initial_model_tables_are_registered() -> None:
@@ -92,3 +93,22 @@ def test_barber_shop_defaults_to_basic_plan() -> None:
         session.refresh(shop)
 
         assert shop.plan == "basic"
+        assert shop.trial_ends_at is not None
+        remaining = shop.trial_ends_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
+        assert timedelta(days=14) < remaining <= timedelta(days=15)
+
+
+def test_barber_shop_trial_controls_access_without_changing_payment_status() -> None:
+    now = datetime.now(timezone.utc)
+    shop = BarberShop(name="Trial Demo", access_status="active", trial_ends_at=now + timedelta(days=1))
+
+    assert barber_shop_has_access(shop, now=now)
+
+    shop.trial_ends_at = now - timedelta(seconds=1)
+    assert not barber_shop_has_access(shop, now=now)
+
+    shop.trial_ends_at = None
+    assert barber_shop_has_access(shop, now=now)
+
+    shop.access_status = "suspended"
+    assert not barber_shop_has_access(shop, now=now)

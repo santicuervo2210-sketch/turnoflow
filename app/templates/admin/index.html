@@ -60,7 +60,7 @@
   <aside class="tf-sidebar" aria-label="Modulos de gestion">
     <a class="tf-sidebar-brand" href="/admin">TurnoFlow</a>
     <nav class="tf-sidebar-nav">
-      <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+      <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Panel de control</a>
       <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
       <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
       <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
@@ -70,7 +70,7 @@
   </aside>
 
   <nav class="tf-mobile-nav" aria-label="Modulos de gestion">
-    <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Agenda</a>
+    <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Panel</a>
     <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
     <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
     <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
@@ -89,8 +89,8 @@
     <section class="tf-hero" id="agenda">
       <div>
         <span class="stat-label">Agenda y caja</span>
-        <h1>Turnos de hoy y proximos</h1>
-        <p>La pantalla principal para crear, confirmar, cobrar, mover, completar o cancelar turnos.</p>
+        <h1>Panel de control</h1>
+        <p>Turnos de hoy y proximos, cobros y acciones importantes en un solo lugar.</p>
       </div>
       <div class="tf-hero-actions">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Crear turno</button>
@@ -524,6 +524,7 @@
         <div class="tf-stack">
           <h3 class="tf-subtitle">Negocios</h3>
           {% for shop in shops %}
+            {% set commercial = commercial_status_by_shop[shop.id] %}
             <article class="tf-data-card">
               <div class="tf-card-title-row">
                 <div>
@@ -531,10 +532,10 @@
                   <span>Tel: {{ shop.phone or "Sin telefono" }}</span>
                   <span>Direccion: {{ shop.address or "Sin direccion" }}</span>
                 </div>
-                <span class="badge {% if shop.access_status == 'active' %}badge-access-active{% else %}badge-access-suspended{% endif %}">{{ shop.access_status }}</span>
+                <span class="badge badge-commercial-{{ commercial.class }}">{{ commercial.label }}</span>
               </div>
               <div class="team-pills" aria-label="Equipo">
-                {% for barber in shop.barbers %}
+                {% for barber in barbers if barber.barber_shop_id == shop.id %}
                   <span>{{ barber.name }}</span>
                 {% else %}
                   <span>Sin profesionales</span>
@@ -562,7 +563,7 @@
                   <span class="form-text">Los dias desmarcados quedan cerrados. Podes ajustar cada profesional desde Equipo.</span>
                 </div>
               </form>
-              {% if is_owner_view and shop.access_status == "active" %}
+              {% if is_owner_view and commercial.operational %}
                 <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="tf-inline-form mt-2">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                   <input class="form-control form-control-sm" name="reason" placeholder="Motivo">

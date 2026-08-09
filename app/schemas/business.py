@@ -20,6 +20,7 @@ class BarberShopRead(BarberShopCreate):
     plan: str
     suspended_at: datetime | None
     suspension_reason: str | None
+    trial_ends_at: datetime | None
 
 
 class BarberShopSuspend(BaseModel):

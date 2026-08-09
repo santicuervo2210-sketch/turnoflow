@@ -67,7 +67,7 @@ def _save(session: Session, item):
         session.refresh(item)
     except IntegrityError as exc:
         session.rollback()
-        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="Could not save record") from exc
+        raise HTTPException(status_code=HTTPStatus.BAD_REQUEST, detail="No se pudo guardar el registro.") from exc
     return item
 
 

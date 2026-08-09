@@ -14,6 +14,7 @@ ACTIVE_BOOKING_STATUSES = (
 )
 ACTIVE_ACCESS_STATUS = "active"
 SUSPENDED_ACCESS_STATUS = "suspended"
+TRIAL_DAYS = 15
 SLOT_STEP_MINUTES = 15
 BUSINESS_WEEKDAYS = tuple(range(6))
 ALL_WEEKDAYS = tuple(range(7))
@@ -32,6 +33,14 @@ def _as_naive(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value
     return value.replace(tzinfo=None)
+
+
+def barber_shop_has_access(shop: BarberShop, now: datetime | None = None) -> bool:
+    if shop.access_status != ACTIVE_ACCESS_STATUS:
+        return False
+    if shop.trial_ends_at is None:
+        return True
+    return _as_naive(shop.trial_ends_at) >= _as_naive(now or datetime.now(UTC))
 
 
 def _overlaps(first_start: datetime, first_end: datetime, second_start: datetime, second_end: datetime) -> bool:
@@ -78,8 +87,13 @@ def _validate_barber_can_perform_service(session: Session, barber: Barber, servi
 
 def ensure_barber_shop_can_operate(session: Session, barber_shop_id: int) -> BarberShop:
     shop = _get_required(session, BarberShop, barber_shop_id, "Barber shop")
-    if shop.access_status != ACTIVE_ACCESS_STATUS:
-        raise SchedulingError("El acceso del negocio esta suspendido.", HTTPStatus.FORBIDDEN)
+    if not barber_shop_has_access(shop):
+        detail = (
+            "El acceso del negocio esta suspendido."
+            if shop.access_status != ACTIVE_ACCESS_STATUS
+            else "La prueba de 15 dias finalizo."
+        )
+        raise SchedulingError(detail, HTTPStatus.FORBIDDEN)
     return shop
 
 
@@ -98,6 +112,21 @@ def activate_barber_shop(session: Session, barber_shop_id: int) -> BarberShop:
     shop.access_status = ACTIVE_ACCESS_STATUS
     shop.suspended_at = None
     shop.suspension_reason = None
+    shop.trial_ends_at = None
+    session.commit()
+    session.refresh(shop)
+    return shop
+
+
+def extend_barber_shop_trial(session: Session, barber_shop_id: int, days: int = TRIAL_DAYS) -> BarberShop:
+    shop = _get_required(session, BarberShop, barber_shop_id, "Barber shop")
+    now = datetime.now(UTC)
+    current_end = shop.trial_ends_at
+    base = current_end if current_end is not None and _as_naive(current_end) > _as_naive(now) else now
+    shop.access_status = ACTIVE_ACCESS_STATUS
+    shop.suspended_at = None
+    shop.suspension_reason = None
+    shop.trial_ends_at = base + timedelta(days=days)
     session.commit()
     session.refresh(shop)
     return shop

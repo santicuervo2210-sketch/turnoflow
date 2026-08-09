@@ -7,10 +7,11 @@ import os
 import time
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import settings
 from app.models import User, UserRole
+from app.services.appointments import barber_shop_has_access
 
 PASSWORD_ITERATIONS = 260_000
 PASSWORD_RESET_TOKEN_SECONDS = 60 * 60
@@ -47,12 +48,14 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def authenticate_user(session: Session, username: str, password: str) -> User | None:
-    user = session.scalars(select(User).where(User.username == username)).first()
+    user = session.scalars(
+        select(User).options(joinedload(User.barber_shop)).where(User.username == username)
+    ).first()
     if user is None or not user.is_active:
         return None
     if (
         user.role == UserRole.BUSINESS_ADMIN.value
-        and (user.barber_shop is None or user.barber_shop.access_status != "active")
+        and (user.barber_shop is None or not barber_shop_has_access(user.barber_shop))
     ):
         return None
     if not verify_password(password, user.password_hash):

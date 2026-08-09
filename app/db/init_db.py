@@ -30,6 +30,8 @@ def _ensure_sqlite_demo_columns() -> None:
             statements.append("ALTER TABLE barber_shops ADD COLUMN suspended_at DATETIME")
         if "suspension_reason" not in existing_columns:
             statements.append("ALTER TABLE barber_shops ADD COLUMN suspension_reason TEXT")
+        if "trial_ends_at" not in existing_columns:
+            statements.append("ALTER TABLE barber_shops ADD COLUMN trial_ends_at DATETIME")
 
     if not statements:
         return

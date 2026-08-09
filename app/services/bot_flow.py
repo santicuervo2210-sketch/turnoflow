@@ -14,6 +14,7 @@ from app.services.ai_bot import BotIntent, classify_with_ai
 from app.services.appointments import (
     SchedulingError,
     barber_can_perform_service,
+    barber_shop_has_access,
     cancel_appointment,
     create_appointment,
     get_available_slots,
@@ -117,7 +118,7 @@ def _active_services(session: Session, barber_shop_id: int) -> list[Service]:
 
 def _has_enabled_bot(session: Session, barber_shop_id: int) -> bool:
     shop = session.get(BarberShop, barber_shop_id)
-    if shop is None or shop.access_status != "active":
+    if shop is None or not barber_shop_has_access(shop):
         return False
 
     settings = session.scalars(select(BotSettings).where(BotSettings.barber_shop_id == barber_shop_id)).first()

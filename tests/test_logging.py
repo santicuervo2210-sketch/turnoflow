@@ -1,7 +1,7 @@
 import json
 import logging
 
-from app.core.logging import JsonFormatter, build_error_log_payload
+from app.core.logging import JsonFormatter, build_error_log_payload, send_error_alert
 
 
 def test_error_log_payload_is_structured_without_sensitive_request_data() -> None:
@@ -33,3 +33,14 @@ def test_json_formatter_outputs_valid_json() -> None:
     assert formatted["level"] == "ERROR"
     assert formatted["event"] == "unhandled_error"
     assert formatted["path"] == "/admin"
+
+
+def test_error_alert_rejects_non_https_url(monkeypatch) -> None:
+    monkeypatch.setattr("app.core.logging.settings.error_alert_webhook_url", "http://localhost/alert")
+
+    def fail_if_called(*args, **kwargs) -> None:
+        raise AssertionError("urlopen no debe ejecutarse para una URL sin HTTPS")
+
+    monkeypatch.setattr("app.core.logging.urllib.request.urlopen", fail_if_called)
+
+    send_error_alert({"event": "unhandled_error"})

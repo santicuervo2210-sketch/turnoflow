@@ -40,17 +40,19 @@ def build_error_log_payload(method: str, path: str, exc: Exception) -> dict[str,
 
 
 def send_error_alert(payload: dict[str, Any]) -> None:
-    if not settings.error_alert_webhook_url:
+    webhook_url = settings.error_alert_webhook_url
+    if not webhook_url or not webhook_url.startswith("https://"):
         return
 
     request = urllib.request.Request(
-        settings.error_alert_webhook_url,
+        webhook_url,
         data=json.dumps(payload).encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
     try:
-        urllib.request.urlopen(request, timeout=2).close()
+        # The URL is restricted to HTTPS above; Bandit cannot infer that guard.
+        urllib.request.urlopen(request, timeout=2).close()  # nosec B310
     except OSError:
         error_logger.warning("error_alert_delivery_failed")
 

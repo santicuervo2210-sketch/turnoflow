@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import CheckConstraint, DateTime, String, Text
@@ -43,6 +43,10 @@ class BarberShop(TimestampMixin, Base):
     )
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC) + timedelta(days=15),
+    )
 
     barbers: Mapped[list[Barber]] = relationship(
         back_populates="barber_shop",

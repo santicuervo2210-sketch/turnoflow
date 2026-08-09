@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 import re
 
 from fastapi.testclient import TestClient
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 import app.web.routes as web_routes
@@ -26,12 +28,51 @@ def test_admin_dashboard_loads(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "TurnoFlow" in response.text
-    assert "Gestion" in response.text
+    assert "Panel de control" in response.text
     assert response.text.count("data-admin-module-panel=") == 6
     assert 'data-admin-module-panel="agenda"' in response.text
     assert 'data-admin-module-panel="clientes"' in response.text
     assert 'data-admin-module-panel="rendimiento"' in response.text
     assert "window.history.pushState" in response.text
+
+
+def test_login_is_focused_and_does_not_show_private_navigation(client: TestClient) -> None:
+    response = client.get("/login")
+
+    assert response.status_code == 200
+    assert 'class="auth-page"' in response.text
+    assert "Bienvenido" in response.text
+    assert "Entrar al panel" in response.text
+    assert 'href="/owner"' not in response.text
+    assert 'href="/admin"' not in response.text
+
+
+def test_admin_dashboard_keeps_database_round_trips_bounded(client: TestClient) -> None:
+    client.post(
+        "/admin/barber-shops",
+        data={
+            "name": "Performance Demo",
+            "main_barber_name": "Profesional",
+        },
+        follow_redirects=False,
+    )
+    client.get("/admin")  # Initializes optional per-shop settings once.
+
+    select_count = 0
+
+    def count_selects(execute_state) -> None:
+        nonlocal select_count
+        if execute_state.is_select:
+            select_count += 1
+
+    event.listen(Session, "do_orm_execute", count_selects)
+    try:
+        response = client.get("/admin")
+    finally:
+        event.remove(Session, "do_orm_execute", count_selects)
+
+    assert response.status_code == 200
+    assert select_count <= 10
 
 
 def test_security_headers_are_present(client: TestClient) -> None:
@@ -1302,7 +1343,9 @@ def test_admin_can_suspend_and_activate_shop(client: TestClient) -> None:
         follow_redirects=False,
     )
     assert activate_response.status_code == 303
-    assert client.get("/api/barber-shops").json()[0]["access_status"] == "active"
+    activated_shop = client.get("/api/barber-shops").json()[0]
+    assert activated_shop["access_status"] == "active"
+    assert activated_shop["trial_ends_at"] is None
 
 
 def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
@@ -1313,7 +1356,9 @@ def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
     assert owner_response.status_code == 200
     assert "Estado comercial por cliente" in owner_response.text
     assert "Pago Demo" in owner_response.text
-    assert "pago / activo" in owner_response.text
+    assert "Prueba: 15 dias" in owner_response.text
+    assert "Extender 15 dias" in owner_response.text
+    assert "Marcar como pago" in owner_response.text
     assert "plan basic" in owner_response.text
     assert "Crear negocio" in owner_response.text
     assert "Crear acceso de cliente" in owner_response.text
@@ -1327,8 +1372,33 @@ def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
     assert suspend_response.status_code == 303
 
     suspended_owner_response = client.get("/owner")
-    assert "suspendido" in suspended_owner_response.text
+    assert "Suspendido" in suspended_owner_response.text
     assert "Motivo: Pago vencido" in suspended_owner_response.text
+
+
+def test_owner_can_extend_trial_and_convert_it_to_paid_access(client: TestClient) -> None:
+    created_shop = client.post("/api/barber-shops", json={"name": "Prueba Comercial"}).json()
+    shop_id = created_shop["id"]
+    initial_trial_end = datetime.fromisoformat(created_shop["trial_ends_at"])
+
+    extend_response = client.post(
+        f"/owner/shops/{shop_id}/trial/extend",
+        follow_redirects=False,
+    )
+
+    assert extend_response.status_code == 303
+    extended_shop = client.get("/api/barber-shops").json()[0]
+    assert datetime.fromisoformat(extended_shop["trial_ends_at"]) > initial_trial_end
+
+    paid_response = client.post(
+        f"/admin/barber-shops/{shop_id}/activate",
+        follow_redirects=False,
+    )
+
+    assert paid_response.status_code == 303
+    paid_shop = client.get("/api/barber-shops").json()[0]
+    assert paid_shop["trial_ends_at"] is None
+    assert "Pago / activo" in client.get("/owner").text
 
 
 def test_owner_can_create_shop_and_return_to_owner_panel(client: TestClient) -> None:

@@ -12,7 +12,7 @@
     <div class="top-actions">
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
       <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#userModal" type="button">Crear acceso</button>
-      <a class="btn btn-outline-secondary" href="/admin">Gestion completa</a>
+      <a class="btn btn-outline-secondary" href="/admin">Abrir panel</a>
     </div>
   </section>
 
@@ -26,16 +26,18 @@
     </div>
     <div class="stack-list">
       {% for shop in shops %}
+        {% set commercial = commercial_status_by_shop[shop.id] %}
         <div class="mini-row shop-row">
           <div>
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <strong>{{ shop.name }}</strong>
-              <span class="badge {% if shop.access_status == 'active' %}badge-access-active{% else %}badge-access-suspended{% endif %}">
-                {% if shop.access_status == "active" %}pago / activo{% else %}suspendido{% endif %}
-              </span>
+              <span class="badge badge-commercial-{{ commercial.class }}">{{ commercial.label }}</span>
               <span class="badge text-bg-light border">plan {{ shop.plan }}</span>
             </div>
             <div class="small text-secondary">{{ shop.phone or "Sin telefono" }} / {{ shop.address or "Sin direccion" }}</div>
+            {% if shop.trial_ends_at %}
+              <div class="small text-secondary">La prueba finaliza: {{ shop.trial_ends_at.strftime("%d/%m/%Y %H:%M") }}</div>
+            {% endif %}
             {% if shop.suspension_reason %}
               <div class="small text-danger">Motivo: {{ shop.suspension_reason }}</div>
             {% endif %}
@@ -50,9 +52,19 @@
               {% endfor %}
             </div>
           </div>
-          {% if shop.access_status == "active" %}
+          {% if commercial.operational %}
             <div class="d-flex flex-wrap gap-2 align-items-center">
               <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Configurar negocio</a>
+              {% if shop.trial_ends_at %}
+                <form action="/owner/shops/{{ shop.id }}/trial/extend" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">Extender 15 dias</button>
+                </form>
+                <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-outline-success" type="submit">Marcar como pago</button>
+                </form>
+              {% endif %}
               <form action="/admin/barber-shops/{{ shop.id }}/suspend" method="post" class="inline-action">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input class="form-control form-control-sm" name="reason" placeholder="Ej: pago vencido">
@@ -62,9 +74,13 @@
           {% else %}
             <div class="d-flex flex-wrap gap-2">
               <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Revisar configuracion</a>
+              <form action="/owner/shops/{{ shop.id }}/trial/extend" method="post">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Dar 15 dias</button>
+              </form>
               <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="btn btn-sm btn-outline-success" type="submit">Reactivar acceso</button>
+                <button class="btn btn-sm btn-outline-success" type="submit">Habilitar como pago</button>
               </form>
             </div>
           {% endif %}
@@ -134,7 +150,7 @@
         <div class="modal-body row g-3">
           <div class="col-12">
             <div class="alert alert-light border mb-0">
-              Este acceso es para el duenio o encargado del negocio. Los barberos, estilistas o profesionales se crean despues desde Gestion completa, modulo Equipo.
+              Este acceso es para el duenio o encargado del negocio. Los profesionales se crean despues desde el Panel, modulo Equipo.
             </div>
           </div>
           <div class="col-12">
