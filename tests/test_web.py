@@ -821,6 +821,47 @@ def test_admin_can_assign_multiple_specialties_to_professional(client: TestClien
     assert f'name="service_ids" value="{lashes_id}" checked' in dashboard.text
 
 
+def test_admin_can_set_professional_for_all_services_and_every_day(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Salon todos los dias"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={
+            "barber_shop_id": shop_id,
+            "name": "Corte",
+            "duration_minutes": 30,
+            "price": "10000.00",
+        },
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Diego", "service_ids": [service_id]},
+    ).json()["id"]
+
+    response = client.post(
+        f"/admin/barbers/{barber_id}/edit",
+        data={
+            "name": "Diego actualizado",
+            "phone": "",
+            "email": "",
+            "all_services": "true",
+            "all_working_days": "true",
+            "opening_time": "09:00",
+            "closing_time": "19:00",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    schedules = client.get("/api/working-schedules", params={"barber_id": barber_id}).json()
+    active_schedules = [schedule for schedule in schedules if schedule["is_active"]]
+    assert {schedule["day_of_week"] for schedule in active_schedules} == set(range(7))
+    dashboard = client.get("/admin?module=equipo")
+    assert "Diego actualizado" in dashboard.text
+    assert 'name="all_services" value="true" data-all-services checked' in dashboard.text
+    assert 'name="all_working_days" value="true" data-select-all-days checked' in dashboard.text
+    assert f'value="{barber_id}" data-shop-id="{shop_id}" data-service-ids="" data-all-services="true"' in dashboard.text
+
+
 def test_admin_manual_booking_rejects_incompatible_professional_in_spanish(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Equipo Multiple"}).json()["id"]
     cut_id = client.post(

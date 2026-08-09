@@ -1380,6 +1380,8 @@ def admin_create_barber(
     email: str | None = Form(default=None),
     service_ids: list[int] = Form(default=[]),
     working_days: list[int] = Form(default=[]),
+    all_working_days: bool = Form(default=False),
+    all_services: bool = Form(default=False),
     opening_time: time = Form(default=DEFAULT_OPENING_TIME),
     closing_time: time = Form(default=DEFAULT_CLOSING_TIME),
     session: Session = Depends(get_db),
@@ -1389,7 +1391,9 @@ def admin_create_barber(
         return redirect
     if not name.strip():
         return _admin_error_response(request, session, "El profesional necesita un nombre.", selected_module="equipo")
-    selected_days = sorted(set(working_days)) if working_days else list(ALL_WEEKDAYS)
+    selected_days = list(ALL_WEEKDAYS) if all_working_days else sorted(set(working_days))
+    if not selected_days:
+        selected_days = list(ALL_WEEKDAYS)
     if any(day not in ALL_WEEKDAYS for day in selected_days) or opening_time >= closing_time:
         return _admin_error_response(
             request,
@@ -1412,7 +1416,7 @@ def admin_create_barber(
         )
         for day_of_week in selected_days
     ]
-    if service_ids:
+    if service_ids and not all_services:
         services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all())
         if len(services) != len(set(service_ids)) or any(
             service.barber_shop_id != barber_shop_id for service in services
@@ -1436,6 +1440,11 @@ def admin_edit_barber(
     phone: str | None = Form(default=None),
     email: str | None = Form(default=None),
     service_ids: list[int] = Form(default=[]),
+    working_days: list[int] = Form(default=[]),
+    all_working_days: bool = Form(default=False),
+    all_services: bool = Form(default=False),
+    opening_time: time = Form(default=DEFAULT_OPENING_TIME),
+    closing_time: time = Form(default=DEFAULT_CLOSING_TIME),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
     barber = session.get(Barber, barber_id)
@@ -1446,13 +1455,34 @@ def admin_edit_barber(
         return redirect
     if not name.strip():
         return _admin_error_response(request, session, "El profesional necesita un nombre.", selected_module="equipo")
+    schedules = list(
+        session.scalars(select(WorkingSchedule).where(WorkingSchedule.barber_id == barber.id)).all()
+    )
+    existing_working_days = sorted(schedule.day_of_week for schedule in schedules if schedule.is_active)
+    selected_days = (
+        list(ALL_WEEKDAYS)
+        if all_working_days
+        else sorted(set(working_days)) or existing_working_days or list(ALL_WEEKDAYS)
+    )
+    if not selected_days or any(day not in ALL_WEEKDAYS for day in selected_days) or opening_time >= closing_time:
+        return _admin_error_response(
+            request,
+            session,
+            "Selecciona al menos un dia y revisa el horario del profesional.",
+            selected_module="equipo",
+        )
 
     barber.name = name
     barber.phone = phone or None
     barber.email = email or None
-    services = list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all()) if service_ids else []
-    if len(services) != len(set(service_ids)) or any(
-        service.barber_shop_id != barber.barber_shop_id for service in services
+    services = (
+        list(session.scalars(select(Service).where(Service.id.in_(set(service_ids)))).all())
+        if service_ids and not all_services
+        else []
+    )
+    if not all_services and (
+        len(services) != len(set(service_ids))
+        or any(service.barber_shop_id != barber.barber_shop_id for service in services)
     ):
         return _admin_error_response(
             request,
@@ -1461,8 +1491,32 @@ def admin_edit_barber(
             selected_module="equipo",
         )
     barber.services = services
+    for schedule in schedules:
+        schedule.is_active = False
+    for day_of_week in selected_days:
+        matching_schedule = next(
+            (
+                schedule
+                for schedule in schedules
+                if schedule.day_of_week == day_of_week
+                and schedule.start_time == opening_time
+                and schedule.end_time == closing_time
+            ),
+            None,
+        )
+        if matching_schedule is None:
+            session.add(
+                WorkingSchedule(
+                    barber_id=barber.id,
+                    day_of_week=day_of_week,
+                    start_time=opening_time,
+                    end_time=closing_time,
+                )
+            )
+        else:
+            matching_schedule.is_active = True
     session.commit()
-    return _redirect_to("/admin")
+    return _redirect_to("/admin?module=equipo")
 
 
 @router.post("/admin/customers")

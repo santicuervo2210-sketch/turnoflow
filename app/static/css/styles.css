@@ -1659,6 +1659,28 @@ textarea {
   outline: 2px solid #6f3dff;
 }
 
+.tf-record-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.tf-record-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.tf-record-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tf-record-details[open] > summary .btn {
+  background: #f1edff;
+  border-color: #6f3dff;
+  color: #4e2ab5;
+}
+
 @media (max-width: 575.98px) {
   .tf-day-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

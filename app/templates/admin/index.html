@@ -390,15 +390,15 @@
       </div>
       <div class="tf-card-grid">
         {% for service in services %}
-          <article class="tf-data-card">
-            <div class="tf-card-title-row">
+          <details class="tf-data-card tf-record-details">
+            <summary class="tf-card-title-row">
               <div>
                 <strong>{{ service.name }}</strong>
                 <span>{{ service.duration_minutes }} min / ${{ service.price }}</span>
               </div>
-              <span class="badge {% if service.is_active %}badge-access-active{% else %}badge-access-suspended{% endif %}">{{ "Activo" if service.is_active else "Inactivo" }}</span>
-            </div>
-            <form action="/admin/services/{{ service.id }}/edit" method="post" class="tf-edit-grid">
+              <span class="tf-record-actions"><span class="badge {% if service.is_active %}badge-access-active{% else %}badge-access-suspended{% endif %}">{{ "Activo" if service.is_active else "Inactivo" }}</span><span class="btn btn-sm btn-outline-secondary">Ver y editar</span></span>
+            </summary>
+            <form action="/admin/services/{{ service.id }}/edit" method="post" class="tf-edit-grid mt-3">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input class="form-control form-control-sm" name="name" value="{{ service.name }}" required>
               <input class="form-control form-control-sm" type="number" min="1" name="duration_minutes" value="{{ service.duration_minutes }}" required>
@@ -409,7 +409,7 @@
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <button class="btn btn-sm {% if service.is_active %}btn-outline-danger{% else %}btn-outline-success{% endif %} w-100" type="submit">{{ "Desactivar" if service.is_active else "Activar" }}</button>
             </form>
-          </article>
+          </details>
         {% else %}
           <div class="empty-state">Crea el primer servicio para empezar a tomar turnos.</div>
         {% endfor %}
@@ -434,33 +434,57 @@
       <div class="tf-split-grid">
         <div class="tf-card-grid single">
           {% for barber in barbers %}
-            <article class="tf-data-card">
-              <div class="tf-card-title-row">
+            {% set barber_hours = working_hours_by_barber[barber.id] %}
+            {% set barber_days = working_days_by_barber[barber.id] %}
+            <details class="tf-data-card tf-record-details">
+              <summary class="tf-card-title-row">
                 <div>
                   <strong>{{ barber.name }}</strong>
                   <span>{{ barber.phone or "Sin telefono" }}</span>
+                  <span>{{ barber_days|length }} dias / {{ barber_hours[0].strftime('%H:%M') }} - {{ barber_hours[1].strftime('%H:%M') }}</span>
                 </div>
-              </div>
-              <form action="/admin/barbers/{{ barber.id }}/edit" method="post" class="tf-edit-grid">
+                <span class="btn btn-sm btn-outline-secondary">Ver y editar</span>
+              </summary>
+              <form action="/admin/barbers/{{ barber.id }}/edit" method="post" class="tf-edit-grid mt-3" data-professional-form>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input class="form-control form-control-sm" name="name" value="{{ barber.name }}" required>
                 <input class="form-control form-control-sm" name="phone" value="{{ barber.phone or '' }}" placeholder="Telefono">
                 <input class="form-control form-control-sm" name="email" value="{{ barber.email or '' }}" placeholder="Email">
                 <div class="col-12">
                   <span class="form-label d-block mb-1">Servicios que realiza</span>
+                  <label class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="all_services" value="true" data-all-services {% if not barber.services %}checked{% endif %}>
+                    <span class="form-check-label">Todos los servicios</span>
+                  </label>
                   <div class="d-flex flex-wrap gap-2">
                     {% for service in services if service.barber_shop_id == barber.barber_shop_id and service.is_active %}
                       <label class="form-check form-check-inline m-0">
-                        <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}" {% if service in barber.services %}checked{% endif %}>
+                        <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}" {% if service in barber.services %}checked{% endif %} data-service-choice>
                         <span class="form-check-label">{{ service.name }}</span>
                       </label>
                     {% endfor %}
                   </div>
-                  <span class="form-text">Sin marcar: realiza todos los servicios.</span>
                 </div>
+                <div class="col-12" data-day-selector>
+                  <span class="form-label d-block mb-1">Dias que trabaja</span>
+                  <label class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="all_working_days" value="true" data-select-all-days {% if barber_days|length == 7 %}checked{% endif %}>
+                    <span class="form-check-label">Todos los dias</span>
+                  </label>
+                  <div class="tf-day-grid">
+                    {% for option in range(7) %}
+                      <label class="tf-day-option">
+                        <input type="checkbox" name="working_days" value="{{ option }}" data-day-choice {% if option in barber_days %}checked{% endif %}>
+                        <span>{{ weekday_labels[option] }}</span>
+                      </label>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div><label class="form-label">Desde</label><input class="form-control form-control-sm" type="time" name="opening_time" value="{{ barber_hours[0].strftime('%H:%M') }}" required></div>
+                <div><label class="form-label">Hasta</label><input class="form-control form-control-sm" type="time" name="closing_time" value="{{ barber_hours[1].strftime('%H:%M') }}" required></div>
                 <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>
               </form>
-            </article>
+            </details>
           {% else %}
             <div class="empty-state">Sin profesionales cargados.</div>
           {% endfor %}
@@ -550,12 +574,16 @@
               {% set general_working_days = general_working_days_by_shop[shop.id] %}
               <form action="/admin/barber-shops/{{ shop.id }}/hours" method="post" class="tf-inline-form mt-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <div>
+                <div data-day-selector>
                   <label class="form-label mb-2">Dias y horario general</label>
+                  <label class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" data-select-all-days {% if general_working_days|length == 7 %}checked{% endif %}>
+                    <span class="form-check-label">Todos los dias</span>
+                  </label>
                   <div class="tf-day-grid mb-2">
                     {% for option in range(7) %}
                       <label class="tf-day-option">
-                        <input type="checkbox" name="working_days" value="{{ option }}" {% if option in general_working_days %}checked{% endif %}>
+                        <input type="checkbox" name="working_days" value="{{ option }}" data-day-choice {% if option in general_working_days %}checked{% endif %}>
                         <span>{{ weekday_labels[option] }}</span>
                       </label>
                     {% endfor %}
@@ -915,12 +943,16 @@
           <div class="col-12"><input class="form-control" name="name" placeholder="Nombre" required></div>
           <div class="col-6"><input class="form-control" name="phone" placeholder="Telefono"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
-          <div class="col-12">
+          <div class="col-12" data-day-selector>
             <span class="form-label d-block">Dias que trabaja</span>
+            <label class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="all_working_days" value="true" data-select-all-days checked>
+              <span class="form-check-label">Todos los dias</span>
+            </label>
             <div class="tf-day-grid">
               {% for option in range(7) %}
                 <label class="tf-day-option">
-                  <input type="checkbox" name="working_days" value="{{ option }}" checked>
+                  <input type="checkbox" name="working_days" value="{{ option }}" data-day-choice checked>
                   <span>{{ weekday_labels[option] }}</span>
                 </label>
               {% endfor %}
@@ -937,10 +969,14 @@
           </div>
           <div class="col-12">
             <label class="form-label">Servicios que realiza</label>
+            <label class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="all_services" value="true" data-all-services checked>
+              <span class="form-check-label">Todos los servicios</span>
+            </label>
             <div class="d-flex flex-wrap gap-2">
               {% for service in services %}
                 <label class="form-check form-check-inline m-0" data-service-shop-id="{{ service.barber_shop_id }}">
-                  <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}">
+                  <input class="form-check-input" type="checkbox" name="service_ids" value="{{ service.id }}" data-service-choice>
                   <span class="form-check-label">{{ service.name }}</span>
                 </label>
               {% endfor %}
@@ -994,12 +1030,16 @@
               {% endfor %}
             </select>
           </div>
-          <div class="col-12">
+          <div class="col-12" data-day-selector>
             <span class="form-label d-block">Dias que trabaja</span>
+            <label class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" data-select-all-days>
+              <span class="form-check-label">Todos los dias</span>
+            </label>
             <div class="tf-day-grid" id="scheduleDayGrid">
               {% for option in range(7) %}
                 <label class="tf-day-option">
-                  <input type="checkbox" name="days_of_week" value="{{ option }}">
+                  <input type="checkbox" name="days_of_week" value="{{ option }}" data-day-choice>
                   <span>{{ weekday_labels[option] }}</span>
                 </label>
               {% endfor %}
@@ -1190,10 +1230,41 @@
       });
       if (startInput) startInput.value = option?.dataset.startTime || "09:00";
       if (endInput) endInput.value = option?.dataset.endTime || "19:00";
+      dayInputs[0]?.dispatchEvent(new Event("change", {bubbles: true}));
     };
 
     barberSelect.addEventListener("change", syncSchedule);
     syncSchedule();
+  })();
+
+  (() => {
+    document.querySelectorAll("[data-day-selector]").forEach((selector) => {
+      const selectAll = selector.querySelector("[data-select-all-days]");
+      const dayChoices = Array.from(selector.querySelectorAll("[data-day-choice]"));
+      if (!selectAll || !dayChoices.length) return;
+      const syncSelectAll = () => {
+        selectAll.checked = dayChoices.every((choice) => choice.checked);
+      };
+      selectAll.addEventListener("change", () => {
+        dayChoices.forEach((choice) => { choice.checked = selectAll.checked; });
+      });
+      dayChoices.forEach((choice) => choice.addEventListener("change", syncSelectAll));
+      syncSelectAll();
+    });
+
+    document.querySelectorAll("[data-professional-form], #createBarberForm").forEach((form) => {
+      const allServices = form.querySelector("[data-all-services]");
+      const serviceChoices = Array.from(form.querySelectorAll("[data-service-choice]"));
+      if (!allServices) return;
+      const syncServices = () => {
+        serviceChoices.forEach((choice) => {
+          choice.disabled = allServices.checked;
+          if (allServices.checked) choice.checked = false;
+        });
+      };
+      allServices.addEventListener("change", syncServices);
+      syncServices();
+    });
   })();
 </script>
 {% endblock %}
