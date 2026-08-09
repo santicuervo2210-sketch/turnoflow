@@ -8,7 +8,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models import Appointment, AppointmentStatus, Barber, BarberShop, Customer, Service
+from app.models import Appointment, AppointmentStatus, Barber, BarberShop, Customer, Service, SupplySale
 import app.web.routes as web_routes
 
 
@@ -37,6 +37,81 @@ def test_admin_dashboard_loads(client: TestClient) -> None:
     assert 'data-admin-module-panel="clientes"' in response.text
     assert 'data-admin-module-panel="rendimiento"' in response.text
     assert "window.history.pushState" in response.text
+
+
+def test_admin_modules_expose_fast_daily_controls_without_duplicate_schedule_button(client: TestClient) -> None:
+    response = client.get("/admin")
+
+    assert 'data-list-search="customers"' in response.text
+    assert 'data-range-days="0"' in response.text
+    assert 'data-range-days="7"' in response.text
+    assert 'data-range-days="30"' in response.text
+    assert "Sin profesional asignado" not in response.text
+    assert 'data-bs-target="#scheduleModal"' not in response.text
+    assert "Resumen semanal" in response.text
+    assert "tf-mobile-create" in response.text
+
+
+def test_performance_totals_respect_selected_date_range(db_session: Session) -> None:
+    shop = BarberShop(name="Rendimiento por fecha")
+    service = Service(
+        barber_shop=shop,
+        name="Servicio",
+        duration_minutes=30,
+        price=Decimal("100.00"),
+    )
+    barber = Barber(barber_shop=shop, name="Profesional")
+    customer = Customer(barber_shop=shop, full_name="Cliente")
+    db_session.add_all([shop, service, barber, customer])
+    db_session.flush()
+    for starts_at in (datetime(2026, 8, 1, 10, 0), datetime(2026, 8, 10, 10, 0)):
+        db_session.add(
+            Appointment(
+                barber_shop_id=shop.id,
+                barber_id=barber.id,
+                customer_id=customer.id,
+                service_id=service.id,
+                starts_at=starts_at,
+                ends_at=starts_at + timedelta(minutes=30),
+                status=AppointmentStatus.COMPLETED.value,
+                is_paid=True,
+                paid_at=starts_at,
+            )
+        )
+    db_session.add_all(
+        [
+            SupplySale(
+                barber_shop_id=shop.id,
+                name="Producto incluido",
+                quantity=1,
+                unit_price=Decimal("50.00"),
+                created_at=datetime(2026, 8, 1, 12, 0),
+            ),
+            SupplySale(
+                barber_shop_id=shop.id,
+                name="Producto excluido",
+                quantity=1,
+                unit_price=Decimal("70.00"),
+                created_at=datetime(2026, 8, 10, 12, 0),
+            ),
+        ]
+    )
+    db_session.commit()
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/admin",
+            "query_string": b"module=rendimiento&start_date=2026-08-01&end_date=2026-08-01",
+            "headers": [],
+        }
+    )
+
+    context = web_routes._dashboard_context(request, db_session, shop_id=shop.id)
+
+    assert context["stats"]["completed_revenue"] == Decimal("100.00")
+    assert context["stats"]["supply_revenue"] == Decimal("50.00")
+    assert [sale.name for sale in context["supply_sales"]] == ["Producto incluido"]
 
 
 def test_login_is_focused_and_does_not_show_private_navigation(client: TestClient) -> None:

@@ -100,11 +100,11 @@
 
     <section class="tf-stats-grid" aria-label="Resumen">
       <div class="stat-card">
-        <div class="stat-label">Agenda activa</div>
-        <div class="stat-value">{{ stats.active_appointments }}</div>
+        <div class="stat-label">Turnos de hoy</div>
+        <div class="stat-value">{{ agenda_today_appointments|length }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Confirmados / pendientes</div>
+        <div class="stat-label">Agenda activa</div>
         <div class="stat-value">{{ stats.active_appointments }}</div>
       </div>
       <div class="stat-card">
@@ -117,14 +117,9 @@
       </div>
     </section>
 
-    <section class="tf-panel">
-      <div class="tf-panel-head">
-        <div>
-          <span class="stat-label">Filtro rapido</span>
-          <h2>Agenda activa</h2>
-        </div>
-      </div>
-      <form action="/admin" method="get" class="tf-filter-bar">
+    <details class="tf-panel tf-filter-details" {% if dashboard_filters.start_date or dashboard_filters.end_date %}open{% endif %}>
+      <summary class="tf-filter-summary"><span><span class="stat-label">Vista y filtros</span><strong>{{ dashboard_filters.total }} turnos encontrados</strong></span><span class="btn btn-sm btn-outline-secondary">Cambiar rango</span></summary>
+      <form action="/admin" method="get" class="tf-filter-bar mt-3" data-date-range-form>
         <input type="hidden" name="module" value="agenda">
         <input class="form-control" type="date" name="start_date" value="{{ dashboard_filters.start_date }}" aria-label="Fecha inicio">
         <input class="form-control" type="date" name="end_date" value="{{ dashboard_filters.end_date }}" aria-label="Fecha fin">
@@ -136,6 +131,12 @@
         <input type="hidden" name="page" value="1">
         <button class="btn btn-outline-primary" type="submit">Filtrar</button>
       </form>
+      <div class="tf-range-actions mt-2">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="0">Hoy</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 dias</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 dias</button>
+        <a class="btn btn-sm btn-link" href="/admin?module=agenda">Limpiar</a>
+      </div>
       <div class="tf-pagination-row">
         <span>{{ dashboard_filters.total }} turnos en el rango</span>
         <div class="d-flex gap-2">
@@ -147,7 +148,7 @@
           {% endif %}
         </div>
       </div>
-    </section>
+    </details>
 
     <section class="tf-panel tf-agenda-panel">
       <div class="tf-panel-head tf-agenda-heading">
@@ -358,12 +359,16 @@
           </section>
         </div>
       {% else %}
+        <div class="tf-search-row mb-3">
+          <input class="form-control" type="search" placeholder="Buscar por nombre, telefono o nota" aria-label="Buscar clientes" data-list-search="customers">
+          <span class="text-secondary small">{{ customers|length }} clientes</span>
+        </div>
         <div class="tf-list-table-wrap">
           <table class="table align-middle tf-list-table">
             <thead><tr><th>Cliente</th><th>Telefono</th><th>Notas</th><th></th></tr></thead>
             <tbody>
               {% for customer in customers|reverse %}
-                <tr>
+                <tr data-search-item="customers" data-search-text="{{ customer.full_name }} {{ customer.phone or '' }} {{ customer.notes or '' }}">
                   <td data-label="Cliente"><strong>{{ customer.full_name }}</strong></td>
                   <td data-label="Telefono">{{ customer.phone or "Sin telefono" }}</td>
                   <td data-label="Notas">{{ customer.notes or "Sin notas" }}</td>
@@ -390,11 +395,16 @@
       </div>
       <div class="tf-card-grid">
         {% for service in services %}
+          {% set coverage = namespace(count=0) %}
+          {% for barber in barbers if barber.barber_shop_id == service.barber_shop_id and barber.is_active %}
+            {% if not barber.services or service in barber.services %}{% set coverage.count = coverage.count + 1 %}{% endif %}
+          {% endfor %}
           <details class="tf-data-card tf-record-details">
             <summary class="tf-card-title-row">
               <div>
                 <strong>{{ service.name }}</strong>
                 <span>{{ service.duration_minutes }} min / ${{ service.price }}</span>
+                <span class="{% if coverage.count == 0 and service.is_active %}text-danger{% endif %}">{% if coverage.count %}{{ coverage.count }} profesional{% if coverage.count != 1 %}es{% endif %}{% else %}Sin profesional asignado{% endif %}</span>
               </div>
               <span class="tf-record-actions"><span class="badge {% if service.is_active %}badge-access-active{% else %}badge-access-suspended{% endif %}">{{ "Activo" if service.is_active else "Inactivo" }}</span><span class="btn btn-sm btn-outline-secondary">Ver y editar</span></span>
             </summary>
@@ -427,7 +437,6 @@
         </div>
         <div class="tf-action-row">
           <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#barberModal" type="button">Profesional</button>
-          <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#scheduleModal" type="button">Horario</button>
           <button class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#blockModal" type="button">Bloqueo</button>
         </div>
       </div>
@@ -436,7 +445,7 @@
           {% for barber in barbers %}
             {% set barber_hours = working_hours_by_barber[barber.id] %}
             {% set barber_days = working_days_by_barber[barber.id] %}
-            <details class="tf-data-card tf-record-details">
+            <details class="tf-data-card tf-record-details" id="professional-{{ barber.id }}" data-professional-card="{{ barber.id }}">
               <summary class="tf-card-title-row">
                 <div>
                   <strong>{{ barber.name }}</strong>
@@ -491,27 +500,26 @@
         </div>
         <div class="tf-stack">
           <div class="tf-mini-section">
-            <h3>Horarios semanales</h3>
-            {% for schedule in schedules %}
+            <h3>Resumen semanal</h3>
+            {% for barber in barbers %}
+              {% set barber_days = working_days_by_barber[barber.id] %}
+              {% set barber_hours = working_hours_by_barber[barber.id] %}
               <div class="tf-compact-row">
                 <div>
-                  <strong>{{ schedule.barber.name }}</strong>
-                  <span>{{ weekday_labels[schedule.day_of_week] }} / {{ schedule.start_time.strftime("%H:%M") }} - {{ schedule.end_time.strftime("%H:%M") }}</span>
+                  <strong>{{ barber.name }}</strong>
+                  <span>
+                    {% if barber_days|length == 7 %}
+                      Todos los dias
+                    {% else %}
+                      {% for day in barber_days %}{{ weekday_labels[day] }}{% if not loop.last %}, {% endif %}{% endfor %}
+                    {% endif %}
+                    / {{ barber_hours[0].strftime("%H:%M") }} - {{ barber_hours[1].strftime("%H:%M") }}
+                  </span>
                 </div>
-                <form action="/admin/working-schedules/{{ schedule.id }}/edit" method="post" class="tf-inline-edit">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <select class="form-select form-select-sm" name="day_of_week" required>
-                    {% for option in range(7) %}
-                      <option value="{{ option }}" {% if schedule.day_of_week == option %}selected{% endif %}>{{ weekday_labels[option] }}</option>
-                    {% endfor %}
-                  </select>
-                  <input class="form-control form-control-sm" type="time" name="start_time" value="{{ schedule.start_time }}" required>
-                  <input class="form-control form-control-sm" type="time" name="end_time" value="{{ schedule.end_time }}" required>
-                  <button class="btn btn-sm btn-outline-primary" type="submit">Guardar</button>
-                </form>
+                <a class="btn btn-sm btn-outline-secondary" href="#professional-{{ barber.id }}" data-open-professional="{{ barber.id }}">Editar</a>
               </div>
             {% else %}
-              <div class="text-secondary">Sin horarios.</div>
+              <div class="text-secondary">Sin profesionales.</div>
             {% endfor %}
           </div>
           <div class="tf-mini-section">
@@ -614,7 +622,7 @@
           {% endfor %}
         </div>
         <div class="tf-stack">
-          <h3 class="tf-subtitle">Bot y vocabulario</h3>
+          <h3 class="tf-subtitle">Bot</h3>
           {% for shop in shops %}
             {% set settings = bot_settings_by_shop[shop.id] %}
             <form action="/admin/bot-settings/{{ shop.id }}" method="post" class="tf-data-card">
@@ -639,7 +647,7 @@
               <textarea class="form-control" name="menu_message" rows="4" required>{{ settings.menu_message }}</textarea>
               <button class="btn btn-primary mt-2" type="submit">Guardar configuracion</button>
             </form>
-            <article class="tf-data-card">
+            {% if is_owner_view %}<article class="tf-data-card">
               <div class="tf-card-title-row">
                 <div><strong>Palabras del negocio</strong><span>Conectan la forma de hablar del cliente con un servicio.</span></div>
               </div>
@@ -684,7 +692,7 @@
                   <button class="btn btn-sm btn-outline-success" type="submit">Restaurar default</button>
                 </form>
               {% endfor %}
-            </article>
+            </article>{% endif %}
           {% else %}
             <div class="empty-state">Crea un negocio para configurar el saludo automatico.</div>
           {% endfor %}
@@ -701,6 +709,18 @@
           <h2>Historial y caja</h2>
           <p>Control de completados, cancelados, vencidos, cobros e insumos vendidos.</p>
         </div>
+      </div>
+      <form action="/admin" method="get" class="tf-filter-bar mb-3" data-date-range-form>
+        <input type="hidden" name="module" value="rendimiento">
+        <input class="form-control" type="date" name="start_date" value="{{ dashboard_filters.start_date }}" aria-label="Fecha inicio de rendimiento">
+        <input class="form-control" type="date" name="end_date" value="{{ dashboard_filters.end_date }}" aria-label="Fecha fin de rendimiento">
+        <button class="btn btn-outline-primary" type="submit">Aplicar</button>
+      </form>
+      <div class="tf-range-actions mb-3">
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="0">Hoy</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 dias</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 dias</button>
+        <a class="btn btn-sm btn-link" href="/admin?module=rendimiento">Todo</a>
       </div>
       <div class="tf-money-grid">
         <div><span>Cobrado por turnos</span><strong>${{ stats.completed_revenue }}</strong></div>
@@ -786,6 +806,8 @@
     </div>
   </div>
 </div>
+
+<button class="btn btn-primary tf-mobile-create" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button" aria-label="Crear turno">+ Turno</button>
 
 <div class="modal fade" id="appointmentModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -1013,48 +1035,6 @@
   </div>
 </div>
 
-<div class="modal fade" id="scheduleModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header"><h2 class="modal-title h5">Horario semanal</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
-      <form action="/admin/working-schedules" method="post">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="replace_week" value="true">
-        <div class="modal-body row g-3">
-          <div class="col-12">
-            <label class="form-label">Profesional</label>
-            <select class="form-select" id="scheduleBarberSelect" name="barber_id" required>
-              {% for barber in barbers %}
-                {% set barber_hours = working_hours_by_barber[barber.id] %}
-                <option value="{{ barber.id }}" data-working-days="{{ working_days_by_barber[barber.id]|join(',') }}" data-start-time="{{ barber_hours[0].strftime('%H:%M') }}" data-end-time="{{ barber_hours[1].strftime('%H:%M') }}">{{ barber.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="col-12" data-day-selector>
-            <span class="form-label d-block">Dias que trabaja</span>
-            <label class="form-check mb-2">
-              <input class="form-check-input" type="checkbox" data-select-all-days>
-              <span class="form-check-label">Todos los dias</span>
-            </label>
-            <div class="tf-day-grid" id="scheduleDayGrid">
-              {% for option in range(7) %}
-                <label class="tf-day-option">
-                  <input type="checkbox" name="days_of_week" value="{{ option }}" data-day-choice>
-                  <span>{{ weekday_labels[option] }}</span>
-                </label>
-              {% endfor %}
-            </div>
-            <div class="form-text">Marca todos los dias laborales. Los demas quedaran como descanso.</div>
-          </div>
-          <div class="col-6"><label class="form-label">Desde</label><input class="form-control" type="time" name="start_time" required></div>
-          <div class="col-6"><label class="form-label">Hasta</label><input class="form-control" type="time" name="end_time" required></div>
-        </div>
-        <div class="modal-footer"><button class="btn btn-primary" type="submit">Guardar horario</button></div>
-      </form>
-    </div>
-  </div>
-</div>
-
 <div class="modal fade" id="blockModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -1215,29 +1195,6 @@
   })();
 
   (() => {
-    const barberSelect = document.getElementById("scheduleBarberSelect");
-    const form = barberSelect?.closest("form");
-    if (!barberSelect || !form) return;
-    const dayInputs = Array.from(form.querySelectorAll('[name="days_of_week"]'));
-    const startInput = form.querySelector('[name="start_time"]');
-    const endInput = form.querySelector('[name="end_time"]');
-
-    const syncSchedule = () => {
-      const option = barberSelect.options[barberSelect.selectedIndex];
-      const workingDays = new Set((option?.dataset.workingDays || "").split(",").filter(Boolean));
-      dayInputs.forEach((input) => {
-        input.checked = workingDays.has(input.value);
-      });
-      if (startInput) startInput.value = option?.dataset.startTime || "09:00";
-      if (endInput) endInput.value = option?.dataset.endTime || "19:00";
-      dayInputs[0]?.dispatchEvent(new Event("change", {bubbles: true}));
-    };
-
-    barberSelect.addEventListener("change", syncSchedule);
-    syncSchedule();
-  })();
-
-  (() => {
     document.querySelectorAll("[data-day-selector]").forEach((selector) => {
       const selectAll = selector.querySelector("[data-select-all-days]");
       const dayChoices = Array.from(selector.querySelectorAll("[data-day-choice]"));
@@ -1264,6 +1221,44 @@
       };
       allServices.addEventListener("change", syncServices);
       syncServices();
+    });
+  })();
+
+  (() => {
+    document.querySelectorAll("[data-list-search]").forEach((input) => {
+      const group = input.dataset.listSearch;
+      const items = Array.from(document.querySelectorAll(`[data-search-item="${group}"]`));
+      input.addEventListener("input", () => {
+        const query = input.value.trim().toLocaleLowerCase("es");
+        items.forEach((item) => {
+          item.hidden = !item.dataset.searchText.toLocaleLowerCase("es").includes(query);
+        });
+      });
+    });
+
+    document.querySelectorAll("[data-date-range-form]").forEach((form) => {
+      const startInput = form.querySelector('[name="start_date"]');
+      const endInput = form.querySelector('[name="end_date"]');
+      const container = form.parentElement;
+      container?.querySelectorAll("[data-range-days]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const days = Number(button.dataset.rangeDays);
+          const start = new Date();
+          const end = new Date();
+          end.setDate(start.getDate() + (days === 0 ? 0 : days - 1));
+          const formatDate = (value) => value.toISOString().slice(0, 10);
+          startInput.value = formatDate(start);
+          endInput.value = formatDate(end);
+          form.submit();
+        });
+      });
+    });
+
+    document.querySelectorAll("[data-open-professional]").forEach((link) => {
+      link.addEventListener("click", () => {
+        const card = document.querySelector(`[data-professional-card="${link.dataset.openProfessional}"]`);
+        if (card) card.open = true;
+      });
     });
   })();
 </script>

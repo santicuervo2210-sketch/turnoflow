@@ -320,15 +320,23 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             func.coalesce(
                 func.sum(case((and_(filtered_condition, history_condition), 1), else_=0)), 0
             ).label("history_count"),
-            func.coalesce(func.sum(case((Appointment.is_paid.is_(True), 1), else_=0)), 0).label("paid_count"),
             func.coalesce(
-                func.sum(case((Appointment.is_paid.is_(True), Service.price), else_=0)), 0
+                func.sum(case((and_(filtered_condition, Appointment.is_paid.is_(True)), 1), else_=0)), 0
+            ).label("paid_count"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (and_(filtered_condition, Appointment.is_paid.is_(True)), Service.price),
+                        else_=0,
+                    )
+                ), 0
             ).label("appointment_revenue"),
             func.coalesce(
                 func.sum(
                     case(
                         (
                             and_(
+                                filtered_condition,
                                 Appointment.status == AppointmentStatus.COMPLETED.value,
                                 Appointment.is_paid.is_(True),
                             ),
@@ -345,7 +353,13 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             func.coalesce(
                 func.sum(
                     case(
-                        (Appointment.status == AppointmentStatus.CANCELLED.value, Service.price),
+                        (
+                            and_(
+                                filtered_condition,
+                                Appointment.status == AppointmentStatus.CANCELLED.value,
+                            ),
+                            Service.price,
+                        ),
                         else_=0,
                     )
                 ),
@@ -415,6 +429,13 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         or _as_naive_datetime(appointment.starts_at) < now
     ]
     recent_supply_query = _shop_filter(select(SupplySale), shop_id, SupplySale)
+    supply_filtered_condition = true()
+    if start_date is not None:
+        supply_filtered_condition = and_(supply_filtered_condition, SupplySale.created_at >= start_datetime)
+        recent_supply_query = recent_supply_query.where(SupplySale.created_at >= start_datetime)
+    if end_date is not None:
+        supply_filtered_condition = and_(supply_filtered_condition, SupplySale.created_at <= end_datetime)
+        recent_supply_query = recent_supply_query.where(SupplySale.created_at <= end_datetime)
     recent_supply_sales = list(
         session.scalars(recent_supply_query.order_by(SupplySale.id.desc()).limit(200)).all()
     )
@@ -425,7 +446,15 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         if sale.created_at is not None and today_start <= sale.created_at.replace(tzinfo=None) <= today_end
     ]
     supply_metrics_query = select(
-        func.coalesce(func.sum(SupplySale.unit_price * SupplySale.quantity), 0).label("revenue"),
+        func.coalesce(
+            func.sum(
+                case(
+                    (supply_filtered_condition, SupplySale.unit_price * SupplySale.quantity),
+                    else_=0,
+                )
+            ),
+            0,
+        ).label("revenue"),
         func.coalesce(
             func.sum(
                 case(

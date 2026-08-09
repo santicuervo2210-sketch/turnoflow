@@ -23,11 +23,12 @@
         <h2 class="h5 mb-1">Estado comercial por cliente</h2>
         <p class="text-secondary small mb-0">Si un negocio no paga, suspendelo aca y pierde acceso al panel y al bot.</p>
       </div>
+      <input class="form-control tf-owner-search" type="search" placeholder="Buscar negocio, telefono o usuario" aria-label="Buscar negocios" data-list-search="owner-shops">
     </div>
     <div class="stack-list">
       {% for shop in shops %}
         {% set commercial = commercial_status_by_shop[shop.id] %}
-        <div class="mini-row shop-row">
+        <div class="mini-row shop-row" data-search-item="owner-shops" data-search-text="{{ shop.name }} {{ shop.phone or '' }} {% for user in users if user.barber_shop_id == shop.id %}{{ user.username }} {% endfor %}">
           <div>
             <div class="d-flex align-items-center gap-2 flex-wrap">
               <strong>{{ shop.name }}</strong>
@@ -140,6 +141,18 @@
     </div>
   </section>
 </div>
+
+<script>
+  (() => {
+    const input = document.querySelector('[data-list-search="owner-shops"]');
+    if (!input) return;
+    const items = Array.from(document.querySelectorAll('[data-search-item="owner-shops"]'));
+    input.addEventListener("input", () => {
+      const query = input.value.trim().toLocaleLowerCase("es");
+      items.forEach((item) => { item.hidden = !item.dataset.searchText.toLocaleLowerCase("es").includes(query); });
+    });
+  })();
+</script>
 
 <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">

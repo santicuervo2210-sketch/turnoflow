@@ -1681,8 +1681,65 @@ textarea {
   color: #4e2ab5;
 }
 
+.tf-filter-summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  list-style: none;
+}
+
+.tf-filter-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tf-filter-summary > span:first-child {
+  display: grid;
+}
+
+.tf-range-actions,
+.tf-search-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tf-search-row .form-control {
+  max-width: 34rem;
+}
+
+.tf-owner-search {
+  max-width: 22rem;
+}
+
+.tf-mobile-create {
+  display: none;
+}
+
 @media (max-width: 575.98px) {
   .tf-day-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tf-mobile-create {
+    bottom: 1rem;
+    box-shadow: 0 0.5rem 1.5rem rgb(20 16 40 / 24%);
+    display: block;
+    position: fixed;
+    right: 1rem;
+    z-index: 1030;
+  }
+
+  .tf-filter-summary,
+  .tf-search-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .tf-search-row .form-control,
+  .tf-owner-search {
+    max-width: none;
+    width: 100%;
   }
 }
