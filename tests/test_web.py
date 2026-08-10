@@ -26,6 +26,47 @@ def test_dashboard_normalizes_postgres_timezone_datetimes() -> None:
     assert web_routes._as_naive_datetime(postgres_value) == datetime(2026, 8, 3, 20, 30)
 
 
+def test_dashboard_groups_monday_booking_as_tomorrow_on_sunday_in_argentina(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Agenda Argentina"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Corte", "duration_minutes": 30, "price": "10000"},
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Santino", "service_ids": [service_id]},
+    ).json()["id"]
+    client.post(
+        "/api/working-schedules",
+        json={"barber_id": barber_id, "day_of_week": 0, "start_time": "09:00:00", "end_time": "19:00:00"},
+    )
+    customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Turno del lunes"},
+    ).json()["id"]
+    client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-10T10:00:00",
+        },
+    )
+    monkeypatch.setattr(web_routes, "_business_now", lambda: datetime(2026, 8, 9, 21, 0))
+
+    dashboard = client.get("/admin")
+
+    assert dashboard.status_code == 200
+    assert "Hoy no hay turnos activos" in dashboard.text
+    assert "Mañana" in dashboard.text
+    assert "Turno del lunes" in dashboard.text
+    assert "Manana" not in dashboard.text
+
+
 def test_admin_dashboard_loads(client: TestClient) -> None:
     response = client.get("/admin")
 
@@ -677,7 +718,7 @@ def test_admin_can_create_barber_shop_from_form(client: TestClient) -> None:
     assert barber["phone"] == "222"
 
     dashboard_response = client.get("/admin?module=configuracion")
-    assert "Direccion: Street 1" in dashboard_response.text
+    assert "Dirección: Street 1" in dashboard_response.text
     assert "Mica" in dashboard_response.text
 
     schedules = client.get("/api/working-schedules", params={"barber_id": barber["id"]}).json()
@@ -710,6 +751,48 @@ def test_owner_can_create_shop_without_address_and_with_client_access(client: Te
     assert "Sin usuario cliente" not in owner_page
 
 
+def test_owner_can_create_missing_shop_access_from_managed_business_panel(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Santino Barber"}).json()["id"]
+    client.get(f"/owner/shops/{shop_id}/manage", follow_redirects=False)
+
+    before = client.get("/admin?module=configuracion")
+    assert "Sin usuario de acceso" in before.text
+    assert "Crear usuario y clave" in before.text
+    assert 'id="businessAccessModal"' in before.text
+
+    created = client.post(
+        "/owner/users",
+        data={
+            "username": "santino_barber",
+            "password": "clave-temporal",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+            "next_path": "/admin?module=configuracion",
+        },
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    assert created.headers["location"] == "/admin?module=configuracion"
+
+    after = client.get("/admin?module=configuracion")
+    assert "Acceso: santino_barber" in after.text
+    assert "Sin usuario de acceso" not in after.text
+
+    duplicate = client.post(
+        "/owner/users",
+        data={
+            "username": "santino_barber",
+            "password": "otra-clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+            "next_path": "/admin?module=configuracion",
+        },
+    )
+    assert duplicate.status_code == 400
+    assert "Ese nombre de usuario ya existe" in duplicate.text
+    assert "Error interno" not in duplicate.text
+
+
 def test_owner_shop_creation_reports_duplicate_phone_without_server_error(client: TestClient) -> None:
     client.post("/api/barber-shops", json={"name": "Existente", "phone": "2230000000"})
 
@@ -722,6 +805,14 @@ def test_owner_shop_creation_reports_duplicate_phone_without_server_error(client
     assert response.status_code == 303
     assert response.headers["location"] == "/owner?notice=shop_phone_in_use"
     assert [shop["name"] for shop in client.get("/api/barber-shops").json()] == ["Existente"]
+
+    panel_response = client.post(
+        "/admin/barber-shops",
+        data={"name": "Duplicado desde panel", "phone": "2230000000", "address": ""},
+    )
+    assert panel_response.status_code == 400
+    assert "Ese teléfono ya está asignado a otro negocio" in panel_response.text
+    assert "Error interno" not in panel_response.text
 
 
 def test_owner_deletes_shop_only_after_exact_name_confirmation(client: TestClient) -> None:
@@ -1809,8 +1900,8 @@ def test_admin_general_hours_apply_only_selected_working_days(client: TestClient
     assert all(schedule["end_time"] == "19:00:00" for schedule in active_schedules)
 
     configuration = client.get("/admin?module=configuracion")
-    assert "Dias y horario general" in configuration.text
-    assert "Los dias desmarcados quedan cerrados" in configuration.text
+    assert "Días y horario general" in configuration.text
+    assert "Los días desmarcados quedan cerrados" in configuration.text
 
 
 def test_admin_weekly_schedule_replaces_days_and_accepts_sunday(client: TestClient) -> None:

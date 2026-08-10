@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     login_rate_limit_per_minute: int = 30
     bot_webhook_rate_limit_per_minute: int = 120
     database_pool_mode: str = "serverless"
+    business_timezone: str = "America/Argentina/Buenos_Aires"
     cron_secret: str = ""
     bot_conversation_ttl_days: int = 30
     webhook_receipt_ttl_days: int = 30

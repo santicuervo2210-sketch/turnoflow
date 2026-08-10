@@ -3,6 +3,7 @@ from decimal import Decimal
 from http import HTTPStatus
 import hashlib
 import hmac
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -102,6 +103,11 @@ BOT_SIMULATOR_FROM_PHONE = "+5491100000000"
 WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
 ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
 OWNER_MANAGED_SHOP_COOKIE = "turnoflow_owner_shop"
+
+
+def _business_now() -> datetime:
+    """Return the business wall-clock time used by appointments."""
+    return datetime.now(ZoneInfo(settings.business_timezone)).replace(tzinfo=None)
 
 
 def _redirect_to(path: str) -> RedirectResponse:
@@ -311,7 +317,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         end_datetime = datetime.combine(end_date, time.max)
         appointments_query = appointments_query.where(Appointment.starts_at <= end_datetime)
         filtered_condition = and_(filtered_condition, Appointment.starts_at <= end_datetime)
-    now = datetime.now()
+    now = _business_now()
     today = now.date()
     tomorrow = today + timedelta(days=1)
     today_start = datetime.combine(today, time.min)
@@ -493,6 +499,17 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         ).unique().all()
     )
     customers = list(session.scalars(_shop_filter(select(Customer).order_by(Customer.id), shop_id, Customer)).all())
+    business_users = list(
+        session.scalars(
+            _shop_filter(
+                select(User)
+                .where(User.role == UserRole.BUSINESS_ADMIN.value)
+                .order_by(User.id),
+                shop_id,
+                User,
+            )
+        ).all()
+    )
     schedules = list(
         session.scalars(
             select(WorkingSchedule)
@@ -579,7 +596,11 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             )
             for barber in barbers
         },
-        "weekday_labels": ("Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"),
+        "weekday_labels": ("Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"),
+        "business_users_by_shop": {
+            shop.id: [user for user in business_users if user.barber_shop_id == shop.id]
+            for shop in shops
+        },
         "schedules": schedules,
         "time_blocks": time_blocks,
         "appointments": appointments,
@@ -760,7 +781,7 @@ def _bot_quick_actions(
         {"label": f"Precio {service.name}", "message": f"cuanto sale {service.name}"},
     ]
     for offset in range(7):
-        target_date = date.today() + timedelta(days=offset)
+        target_date = _business_now().date() + timedelta(days=offset)
         try:
             slots = get_available_slots(
                 session,
@@ -965,6 +986,7 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "user_activated": "Acceso reactivado.",
         "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
         "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
+        "user_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
         "shop_created": "Negocio creado correctamente.",
         "shop_created_with_user": "Negocio y acceso de cliente creados correctamente.",
         "shop_phone_in_use": "Ese telefono ya esta asignado a otro negocio.",
@@ -997,23 +1019,38 @@ def owner_create_user(
     password: str = Form(...),
     role: str = Form(...),
     barber_shop_id: str = Form(default=""),
+    next_path: str | None = Form(default="/owner"),
     session: Session = Depends(get_db),
-) -> RedirectResponse:
+):
     redirect = _redirect_if_not_owner(request, session)
     if redirect is not None:
         return redirect
+
+    destination = _safe_next_path(next_path)
+
+    def invalid_access(message: str, owner_notice: str = ""):
+        if destination.startswith("/admin"):
+            return _admin_error_response(
+                request,
+                session,
+                message,
+                status_code=HTTPStatus.BAD_REQUEST,
+                selected_module="configuracion",
+            )
+        suffix = f"?notice={owner_notice}" if owner_notice else ""
+        return _redirect_to(f"/owner{suffix}")
 
     try:
         selected_role = UserRole(role)
         parsed_shop_id = int(barber_shop_id) if barber_shop_id.strip() else None
     except ValueError:
-        return _redirect_to("/owner")
+        return invalid_access("El rol o el negocio seleccionado no es válido.")
     if not username.strip() or len(password) < 8:
-        return _redirect_to("/owner")
+        return invalid_access("Completá un usuario y una clave de al menos 8 caracteres.")
     if selected_role == UserRole.BUSINESS_ADMIN and parsed_shop_id is None:
-        return _redirect_to("/owner")
+        return invalid_access("Seleccioná el negocio al que pertenece este acceso.")
     if parsed_shop_id is not None and session.get(BarberShop, parsed_shop_id) is None:
-        return _redirect_to("/owner")
+        return invalid_access("El negocio seleccionado no existe.")
 
     try:
         create_user(
@@ -1025,7 +1062,8 @@ def owner_create_user(
         )
     except IntegrityError:
         session.rollback()
-    return _redirect_to("/owner")
+        return invalid_access("Ese nombre de usuario ya existe. Elegí otro.", "user_username_in_use")
+    return _redirect_to(destination)
 
 
 @router.post("/owner/users/{user_id}/password-reset-link")
@@ -1207,6 +1245,19 @@ def admin_create_barber_shop(
     if not name.strip():
         return _redirect_to(_safe_next_path(next_path))
 
+    destination = _safe_next_path(next_path)
+
+    def creation_error(message: str, owner_notice: str):
+        if destination.startswith("/owner"):
+            return _redirect_to(f"/owner?notice={owner_notice}")
+        return _admin_error_response(
+            request,
+            session,
+            message,
+            status_code=HTTPStatus.BAD_REQUEST,
+            selected_module="configuracion",
+        )
+
     clean_phone = phone.strip() if phone and phone.strip() else None
     clean_address = address.strip() if address and address.strip() else None
     clean_main_barber_name = main_barber_name.strip() if main_barber_name else ""
@@ -1215,13 +1266,16 @@ def admin_create_barber_shop(
     wants_account = bool(clean_account_username or clean_account_password)
 
     if wants_account and (not clean_account_username or len(clean_account_password) < 8):
-        return _redirect_to("/owner?notice=shop_access_invalid")
+        return creation_error(
+            "Para crear el acceso completá un usuario y una clave de al menos 8 caracteres.",
+            "shop_access_invalid",
+        )
     if clean_phone and session.scalar(select(BarberShop.id).where(BarberShop.phone == clean_phone)) is not None:
-        return _redirect_to("/owner?notice=shop_phone_in_use")
+        return creation_error("Ese teléfono ya está asignado a otro negocio.", "shop_phone_in_use")
     if clean_account_username and session.scalar(
         select(User.id).where(User.username == clean_account_username)
     ) is not None:
-        return _redirect_to("/owner?notice=shop_username_in_use")
+        return creation_error("Ese nombre de usuario ya existe. Elegí otro.", "shop_username_in_use")
 
     shop = BarberShop(
         name=name.strip(),
@@ -1254,9 +1308,11 @@ def admin_create_barber_shop(
     try:
         _save(session, shop)
     except IntegrityError:
-        return _redirect_to("/owner?notice=shop_create_failed")
+        return creation_error(
+            "No se pudo crear el negocio. Revisá que el teléfono y el usuario no estén repetidos.",
+            "shop_create_failed",
+        )
 
-    destination = _safe_next_path(next_path)
     if destination == "/owner" and wants_account:
         destination = "/owner?notice=shop_created_with_user"
     return _redirect_to(destination)

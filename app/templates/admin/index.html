@@ -64,7 +64,7 @@
       <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
       <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
       <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
-      <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuracion</a>
+      <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuración</a>
       <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Rendimiento</a>
     </nav>
   </aside>
@@ -81,8 +81,21 @@
   <div class="tf-main">
     {% if managed_shop %}
       <div class="alert alert-primary d-flex justify-content-between align-items-center flex-wrap gap-2 mb-0">
-        <div><strong>Gestionando:</strong> {{ managed_shop.name }}</div>
-        <a class="btn btn-sm btn-outline-primary" href="/owner/shops/manage/clear">Ver todos los negocios</a>
+        <div>
+          <strong>Gestionando:</strong> {{ managed_shop.name }}
+          {% set managed_users = business_users_by_shop[managed_shop.id] %}
+          {% if managed_users %}
+            <span class="ms-2">Acceso: {{ managed_users|map(attribute='username')|join(', ') }}</span>
+          {% else %}
+            <span class="ms-2 text-danger">Sin usuario de acceso</span>
+          {% endif %}
+        </div>
+        <div class="d-flex gap-2 flex-wrap">
+          {% if not managed_users %}
+            <button class="btn btn-sm btn-primary" type="button" data-create-business-access="{{ managed_shop.id }}" data-business-name="{{ managed_shop.name }}" data-bs-toggle="modal" data-bs-target="#businessAccessModal">Crear usuario y clave</button>
+          {% endif %}
+          <a class="btn btn-sm btn-outline-primary" href="/owner/shops/manage/clear">Ver todos los negocios</a>
+        </div>
       </div>
     {% endif %}
     <div data-admin-module-panel="agenda" {% if current_module != "agenda" %}hidden{% endif %}>
@@ -90,7 +103,7 @@
       <div>
         <span class="stat-label">Agenda y caja</span>
         <h1>Panel de control</h1>
-        <p>Turnos de hoy y proximos, cobros y acciones importantes en un solo lugar.</p>
+        <p>Turnos de hoy y próximos, cobros y acciones importantes en un solo lugar.</p>
       </div>
       <div class="tf-hero-actions">
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Crear turno</button>
@@ -153,9 +166,9 @@
     <section class="tf-panel tf-agenda-panel">
       <div class="tf-panel-head tf-agenda-heading">
         <div>
-          <span class="stat-label">Operacion diaria</span>
+          <span class="stat-label">Operación diaria</span>
           <h2>Agenda del negocio</h2>
-          <p>Hoy primero, despues manana, proximos e historial. Si alguien llama o escribe por fuera del bot, creas el turno desde aca.</p>
+          <p>Hoy primero, después mañana, próximos e historial. Si alguien llama o escribe por fuera del bot, creás el turno desde acá.</p>
         </div>
         <span class="tf-count-pill">{{ stats.active_appointments }} turno{% if stats.active_appointments != 1 %}s{% endif %}</span>
         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Agregar turno</button>
@@ -178,28 +191,28 @@
 
         <div class="tf-agenda-group">
           <div class="tf-group-heading">
-            <h3>Manana</h3>
+            <h3>Mañana</h3>
             <span>{{ agenda_tomorrow_appointments|length }} turno{% if agenda_tomorrow_appointments|length != 1 %}s{% endif %}</span>
           </div>
-          <div class="tf-schedule-list" aria-label="Agenda de manana">
+          <div class="tf-schedule-list" aria-label="Agenda de mañana">
             {% for appointment in agenda_tomorrow_appointments %}
               {{ appointment_row(appointment, csrf_token) }}
             {% else %}
-              <div class="empty-state compact">Manana esta libre por ahora.</div>
+              <div class="empty-state compact">Mañana está libre por ahora.</div>
             {% endfor %}
           </div>
         </div>
 
         <div class="tf-agenda-group">
           <div class="tf-group-heading">
-            <h3>Proximos turnos</h3>
+            <h3>Próximos turnos</h3>
             <span>{{ agenda_upcoming_appointments|length }} futuro{% if agenda_upcoming_appointments|length != 1 %}s{% endif %}</span>
           </div>
-          <div class="tf-schedule-list" aria-label="Proximos turnos">
+          <div class="tf-schedule-list" aria-label="Próximos turnos">
             {% for appointment in agenda_upcoming_appointments[:12] %}
               {{ appointment_row(appointment, csrf_token) }}
             {% else %}
-              <div class="empty-state compact">No hay turnos futuros despues de manana.</div>
+              <div class="empty-state compact">No hay turnos futuros después de mañana.</div>
             {% endfor %}
           </div>
         </div>
@@ -213,7 +226,7 @@
             {% for appointment in appointment_history %}
               {{ appointment_row(appointment, csrf_token, False) }}
             {% else %}
-              <div class="empty-state compact">Todavia no hay turnos pasados, cancelados o completados.</div>
+              <div class="empty-state compact">Todavía no hay turnos pasados, cancelados o completados.</div>
             {% endfor %}
           </div>
         </div>
@@ -318,14 +331,14 @@
               <div>
                 <span class="stat-label">Ficha del cliente</span>
                 <strong>{{ customer_detail.full_name }}</strong>
-                <span>{{ customer_detail.phone or "Sin telefono" }}</span>
+                <span>{{ customer_detail.phone or "Sin teléfono" }}</span>
               </div>
               <a class="btn btn-sm btn-outline-secondary" href="/customer/{{ customer_detail.id }}/appointments">Ver turnos</a>
             </div>
             <form action="/admin/customers/{{ customer_detail.id }}/edit" method="post" class="tf-detail-form">
               <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <label>Nombre<input class="form-control" name="full_name" value="{{ customer_detail.full_name }}" required></label>
-              <label>Telefono<input class="form-control" name="phone" value="{{ customer_detail.phone or '' }}" placeholder="Opcional"></label>
+              <label>Teléfono<input class="form-control" name="phone" value="{{ customer_detail.phone or '' }}" placeholder="Opcional"></label>
               <label>Email<input class="form-control" name="email" value="{{ customer_detail.email or '' }}" placeholder="Opcional"></label>
               <label>Notas<textarea class="form-control" name="notes" rows="3" placeholder="Notas internas">{{ customer_detail.notes or '' }}</textarea></label>
               <button class="btn btn-primary" type="submit">Guardar cambios</button>
@@ -365,17 +378,17 @@
         </div>
         <div class="tf-list-table-wrap">
           <table class="table align-middle tf-list-table">
-            <thead><tr><th>Cliente</th><th>Telefono</th><th>Notas</th><th></th></tr></thead>
+            <thead><tr><th>Cliente</th><th>Teléfono</th><th>Notas</th><th></th></tr></thead>
             <tbody>
               {% for customer in customers|reverse %}
                 <tr data-search-item="customers" data-search-text="{{ customer.full_name }} {{ customer.phone or '' }} {{ customer.notes or '' }}">
                   <td data-label="Cliente"><strong>{{ customer.full_name }}</strong></td>
-                  <td data-label="Telefono">{{ customer.phone or "Sin telefono" }}</td>
+                  <td data-label="Teléfono">{{ customer.phone or "Sin teléfono" }}</td>
                   <td data-label="Notas">{{ customer.notes or "Sin notas" }}</td>
-                  <td data-label="Accion" class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/admin/customers/{{ customer.id }}">Ver detalle</a></td>
+                  <td data-label="Acción" class="text-end"><a class="btn btn-sm btn-outline-secondary" href="/admin/customers/{{ customer.id }}">Ver detalle</a></td>
                 </tr>
               {% else %}
-                <tr><td colspan="4"><div class="empty-state">Todavia no hay clientes cargados.</div></td></tr>
+                <tr><td colspan="4"><div class="empty-state">Todavía no hay clientes cargados.</div></td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -449,7 +462,7 @@
               <summary class="tf-card-title-row">
                 <div>
                   <strong>{{ barber.name }}</strong>
-                  <span>{{ barber.phone or "Sin telefono" }}</span>
+                  <span>{{ barber.phone or "Sin teléfono" }}</span>
                   <span>{{ barber_days|length }} dias / {{ barber_hours[0].strftime('%H:%M') }} - {{ barber_hours[1].strftime('%H:%M') }}</span>
                 </div>
                 <span class="btn btn-sm btn-outline-secondary">Ver y editar</span>
@@ -457,7 +470,7 @@
               <form action="/admin/barbers/{{ barber.id }}/edit" method="post" class="tf-edit-grid mt-3" data-professional-form>
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <input class="form-control form-control-sm" name="name" value="{{ barber.name }}" required>
-                <input class="form-control form-control-sm" name="phone" value="{{ barber.phone or '' }}" placeholder="Telefono">
+                <input class="form-control form-control-sm" name="phone" value="{{ barber.phone or '' }}" placeholder="Teléfono">
                 <input class="form-control form-control-sm" name="email" value="{{ barber.email or '' }}" placeholder="Email">
                 <div class="col-12">
                   <span class="form-label d-block mb-1">Servicios que realiza</span>
@@ -475,10 +488,10 @@
                   </div>
                 </div>
                 <div class="col-12" data-day-selector>
-                  <span class="form-label d-block mb-1">Dias que trabaja</span>
+                  <span class="form-label d-block mb-1">Días que trabaja</span>
                   <label class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" name="all_working_days" value="true" data-select-all-days {% if barber_days|length == 7 %}checked{% endif %}>
-                    <span class="form-check-label">Todos los dias</span>
+                    <span class="form-check-label">Todos los días</span>
                   </label>
                   <div class="tf-day-grid">
                     {% for option in range(7) %}
@@ -509,7 +522,7 @@
                   <strong>{{ barber.name }}</strong>
                   <span>
                     {% if barber_days|length == 7 %}
-                      Todos los dias
+                      Todos los días
                     {% else %}
                       {% for day in barber_days %}{{ weekday_labels[day] }}{% if not loop.last %}, {% endif %}{% endfor %}
                     {% endif %}
@@ -549,9 +562,9 @@
     <section class="tf-panel" id="configuracion">
       <div class="tf-panel-head">
         <div>
-          <span class="stat-label">Configuracion</span>
+          <span class="stat-label">Configuración</span>
           <h2>Negocio y saludo del bot</h2>
-          <p>El negocio solo configura lo basico. La IA y WhatsApp quedan para la conexion posterior.</p>
+          <p>El negocio solo configura lo básico. La IA y WhatsApp quedan para la conexión posterior.</p>
         </div>
         {% if is_owner_view %}
           <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
@@ -566,8 +579,8 @@
               <div class="tf-card-title-row">
                 <div>
                   <strong>{{ shop.name }}</strong>
-                  <span>Tel: {{ shop.phone or "Sin telefono" }}</span>
-                  <span>Direccion: {{ shop.address or "Sin direccion" }}</span>
+                  <span>Tel: {{ shop.phone or "Sin teléfono" }}</span>
+                  <span>Dirección: {{ shop.address or "Sin dirección" }}</span>
                 </div>
                 <span class="badge badge-commercial-{{ commercial.class }}">{{ commercial.label }}</span>
               </div>
@@ -578,15 +591,25 @@
                   <span>Sin profesionales</span>
                 {% endfor %}
               </div>
+              {% if is_owner_view %}
+                {% set shop_users = business_users_by_shop[shop.id] %}
+                <div class="mt-2">
+                  {% if shop_users %}
+                    <span class="badge text-bg-light border">Usuario: {{ shop_users|map(attribute='username')|join(', ') }}</span>
+                  {% else %}
+                    <button class="btn btn-sm btn-primary" type="button" data-create-business-access="{{ shop.id }}" data-business-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#businessAccessModal">Crear usuario y clave</button>
+                  {% endif %}
+                </div>
+              {% endif %}
               {% set general_hours = general_hours_by_shop[shop.id] %}
               {% set general_working_days = general_working_days_by_shop[shop.id] %}
               <form action="/admin/barber-shops/{{ shop.id }}/hours" method="post" class="tf-inline-form mt-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div data-day-selector>
-                  <label class="form-label mb-2">Dias y horario general</label>
+                  <label class="form-label mb-2">Días y horario general</label>
                   <label class="form-check mb-2">
                     <input class="form-check-input" type="checkbox" data-select-all-days {% if general_working_days|length == 7 %}checked{% endif %}>
-                    <span class="form-check-label">Todos los dias</span>
+                    <span class="form-check-label">Todos los días</span>
                   </label>
                   <div class="tf-day-grid mb-2">
                     {% for option in range(7) %}
@@ -601,7 +624,7 @@
                     <input class="form-control form-control-sm" type="time" name="closing_time" value="{{ general_hours[1].strftime('%H:%M') }}" required>
                     <button class="btn btn-sm btn-outline-primary" type="submit">Actualizar horario</button>
                   </div>
-                  <span class="form-text">Los dias desmarcados quedan cerrados. Podes ajustar cada profesional desde Equipo.</span>
+                  <span class="form-text">Los días desmarcados quedan cerrados. Podés ajustar cada profesional desde Equipo.</span>
                 </div>
               </form>
               {% if is_owner_view and commercial.operational %}
@@ -777,7 +800,7 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td class="text-secondary" colspan="6">Todavia no hay historial.</td></tr>
+              <tr><td class="text-secondary" colspan="6">Todavía no hay historial.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -840,11 +863,11 @@
             </div>
             <div class="col-md-6" data-new-customer-field>
               <label class="form-label">Nombre nuevo cliente</label>
-              <input class="form-control" name="new_customer_name" placeholder="Si no esta en la lista">
+              <input class="form-control" name="new_customer_name" placeholder="Si no está en la lista">
             </div>
             <div class="col-md-6" data-new-customer-field>
-              <label class="form-label">Telefono nuevo cliente</label>
-              <input class="form-control" name="new_customer_phone" placeholder="Telefono opcional">
+              <label class="form-label">Teléfono nuevo cliente</label>
+              <input class="form-control" name="new_customer_phone" placeholder="Teléfono opcional">
             </div>
             <div class="col-md-3">
               <label class="form-label">Servicio</label>
@@ -863,12 +886,12 @@
               <input class="form-control" type="datetime-local" name="starts_at" required>
             </div>
             <div class="col-md-3">
-              <label class="form-label">Duracion</label>
+              <label class="form-label">Duración</label>
               <div class="input-group">
                 <input class="form-control" type="number" min="1" max="480" step="1" inputmode="numeric" name="duration_minutes" required>
                 <span class="input-group-text">min</span>
               </div>
-              <div class="form-text">Se completa segun el servicio.</div>
+              <div class="form-text">Se completa según el servicio.</div>
             </div>
             <div class="col-12">
               <div class="form-text" id="appointmentCompatibilityHelp"></div>
@@ -901,12 +924,12 @@
             <input class="form-control" name="name" placeholder="Ej: Brillo Studio" required>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Telefono del local</label>
-            <input class="form-control" name="phone" placeholder="WhatsApp o telefono">
+            <label class="form-label">Teléfono del local</label>
+            <input class="form-control" name="phone" placeholder="WhatsApp o teléfono">
           </div>
           <div class="col-12">
-            <label class="form-label">Direccion</label>
-            <input class="form-control" name="address" placeholder="Calle, numero, ciudad">
+            <label class="form-label">Dirección</label>
+            <input class="form-control" name="address" placeholder="Calle, número, ciudad">
           </div>
           <div class="col-12 mt-2"><span class="stat-label">Primer profesional</span></div>
           <div class="col-md-4">
@@ -914,12 +937,24 @@
             <input class="form-control" name="main_barber_name" placeholder="Ej: Mica">
           </div>
           <div class="col-md-4">
-            <label class="form-label">Telefono</label>
+            <label class="form-label">Teléfono</label>
             <input class="form-control" name="main_barber_phone" placeholder="Contacto">
           </div>
           <div class="col-md-4">
             <label class="form-label">Email</label>
             <input class="form-control" name="main_barber_email" placeholder="Opcional">
+          </div>
+          <div class="col-12 mt-3">
+            <span class="stat-label">Acceso del cliente opcional</span>
+            <p class="text-secondary small mb-0">Completalo para crear el negocio y su acceso al panel en un solo paso.</p>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Usuario para iniciar sesión</label>
+            <input class="form-control" name="account_username" placeholder="Ej: brillo_estudio" autocomplete="off">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Clave temporal</label>
+            <input class="form-control" name="account_password" type="password" minlength="8" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
           </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary" type="submit">Crear</button></div>
@@ -927,6 +962,34 @@
     </div>
   </div>
 </div>
+
+{% if is_owner_view %}
+<div class="modal fade" id="businessAccessModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title h5">Crear acceso del cliente</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
+      <form action="/owner/users" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="role" value="business_admin">
+        <input type="hidden" name="barber_shop_id">
+        <input type="hidden" name="next_path" value="/admin?module=configuracion">
+        <div class="modal-body row g-3">
+          <div class="col-12"><p class="mb-0">Acceso para <strong data-access-business-name></strong></p></div>
+          <div class="col-12">
+            <label class="form-label">Usuario para iniciar sesión</label>
+            <input class="form-control" name="username" required autocomplete="off" placeholder="Ej: santino_barber">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Clave temporal</label>
+            <input class="form-control" name="password" type="password" minlength="8" required autocomplete="new-password" placeholder="Mínimo 8 caracteres">
+          </div>
+        </div>
+        <div class="modal-footer"><button class="btn btn-primary" type="submit">Crear acceso</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
@@ -963,13 +1026,13 @@
             </select>
           </div>
           <div class="col-12"><input class="form-control" name="name" placeholder="Nombre" required></div>
-          <div class="col-6"><input class="form-control" name="phone" placeholder="Telefono"></div>
+          <div class="col-6"><input class="form-control" name="phone" placeholder="Teléfono"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
           <div class="col-12" data-day-selector>
-            <span class="form-label d-block">Dias que trabaja</span>
+            <span class="form-label d-block">Días que trabaja</span>
             <label class="form-check mb-2">
               <input class="form-check-input" type="checkbox" name="all_working_days" value="true" data-select-all-days checked>
-              <span class="form-check-label">Todos los dias</span>
+              <span class="form-check-label">Todos los días</span>
             </label>
             <div class="tf-day-grid">
               {% for option in range(7) %}
@@ -1025,7 +1088,7 @@
             </select>
           </div>
           <div class="col-12"><input class="form-control" name="full_name" placeholder="Nombre" required></div>
-          <div class="col-12"><input class="form-control" name="phone" placeholder="Telefono opcional"></div>
+          <div class="col-12"><input class="form-control" name="phone" placeholder="Teléfono opcional"></div>
           <div class="col-6"><input class="form-control" name="email" placeholder="Email"></div>
           <div class="col-6"><input class="form-control" name="notes" placeholder="Notas"></div>
         </div>
@@ -1089,6 +1152,18 @@
     });
     window.addEventListener("popstate", () => {
       activateModule(new URLSearchParams(window.location.search).get("module") || "agenda", false);
+    });
+  })();
+
+  (() => {
+    const modal = document.getElementById("businessAccessModal");
+    if (!modal) return;
+    modal.addEventListener("show.bs.modal", (event) => {
+      const button = event.relatedTarget;
+      modal.querySelector('[name="barber_shop_id"]').value = button.dataset.createBusinessAccess;
+      modal.querySelector("[data-access-business-name]").textContent = button.dataset.businessName;
+      modal.querySelector('[name="username"]').value = "";
+      modal.querySelector('[name="password"]').value = "";
     });
   })();
 

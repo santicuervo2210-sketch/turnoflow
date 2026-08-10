@@ -35,7 +35,7 @@
               <span class="badge badge-commercial-{{ commercial.class }}">{{ commercial.label }}</span>
               <span class="badge text-bg-light border">plan {{ shop.plan }}</span>
             </div>
-            <div class="small text-secondary">{{ shop.phone or "Sin telefono" }} / {{ shop.address or "Sin direccion" }}</div>
+            <div class="small text-secondary">{{ shop.phone or "Sin teléfono" }} / {{ shop.address or "Sin dirección" }}</div>
             {% if shop.trial_ends_at %}
               <div class="small text-secondary">La prueba finaliza: {{ shop.trial_ends_at.strftime("%d/%m/%Y %H:%M") }}</div>
             {% endif %}
@@ -93,7 +93,7 @@
         </div>
       {% else %}
         <div class="empty-state text-secondary">
-          <h3 class="h5 mb-1">Todavia no hay negocios creados</h3>
+          <h3 class="h5 mb-1">Todavía no hay negocios creados</h3>
           <p class="mb-2">Crea primero el negocio del cliente. Despues vas a poder darle un usuario para entrar.</p>
           <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear primer negocio</button>
         </div>
@@ -185,7 +185,7 @@
         <div class="modal-body row g-3">
           <div class="col-12">
             <div class="alert alert-light border mb-0">
-              Este acceso es para el duenio o encargado del negocio. Los profesionales se crean despues desde el Panel, modulo Equipo.
+              Este acceso es para el dueño o encargado del negocio. Los profesionales se crean después desde el Panel, módulo Equipo.
             </div>
           </div>
           <div class="col-12">
@@ -237,12 +237,12 @@
             <input class="form-control" name="name" placeholder="Ej: Diego LP Studio" required>
           </div>
           <div class="col-md-6">
-            <label class="form-label">Telefono</label>
+            <label class="form-label">Teléfono</label>
             <input class="form-control" name="phone" placeholder="WhatsApp del negocio">
           </div>
           <div class="col-12">
-            <label class="form-label">Direccion</label>
-            <input class="form-control" name="address" placeholder="Calle, numero, ciudad">
+            <label class="form-label">Dirección</label>
+            <input class="form-control" name="address" placeholder="Calle, número, ciudad">
           </div>
           <div class="col-12 mt-2">
             <span class="stat-label">Primer profesional opcional</span>
@@ -253,7 +253,7 @@
             <input class="form-control" name="main_barber_name" placeholder="Ej: Diego">
           </div>
           <div class="col-md-4">
-            <label class="form-label">Telefono</label>
+            <label class="form-label">Teléfono</label>
             <input class="form-control" name="main_barber_phone" placeholder="Contacto">
           </div>
           <div class="col-md-4">
@@ -262,7 +262,7 @@
           </div>
           <div class="col-12 mt-3">
             <span class="stat-label">Acceso del cliente opcional</span>
-            <p class="text-secondary small mb-0">Si lo completas, el negocio y su usuario para iniciar sesion se crean juntos.</p>
+            <p class="text-secondary small mb-0">Si lo completás, el negocio y su usuario para iniciar sesión se crean juntos.</p>
           </div>
           <div class="col-md-6">
             <label class="form-label">Usuario para login</label>
