@@ -686,6 +686,74 @@ def test_admin_can_create_barber_shop_from_form(client: TestClient) -> None:
     assert all(schedule["end_time"] == "19:00:00" for schedule in schedules)
 
 
+def test_owner_can_create_shop_without_address_and_with_client_access(client: TestClient) -> None:
+    response = client.post(
+        "/admin/barber-shops",
+        data={
+            "name": "Santino Estudio",
+            "phone": "",
+            "address": "",
+            "account_username": "santino_estudio",
+            "account_password": "clave-temporal",
+            "next_path": "/owner",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/owner?notice=shop_created_with_user"
+    shop = client.get("/api/barber-shops").json()[0]
+    assert shop["address"] is None
+    assert shop["phone"] is None
+    owner_page = client.get("/owner").text
+    assert "santino_estudio" in owner_page
+    assert "Sin usuario cliente" not in owner_page
+
+
+def test_owner_shop_creation_reports_duplicate_phone_without_server_error(client: TestClient) -> None:
+    client.post("/api/barber-shops", json={"name": "Existente", "phone": "2230000000"})
+
+    response = client.post(
+        "/admin/barber-shops",
+        data={"name": "Duplicado", "phone": "2230000000", "address": "", "next_path": "/owner"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/owner?notice=shop_phone_in_use"
+    assert [shop["name"] for shop in client.get("/api/barber-shops").json()] == ["Existente"]
+
+
+def test_owner_deletes_shop_only_after_exact_name_confirmation(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Negocio de prueba"}).json()["id"]
+    client.post(
+        "/owner/users",
+        data={
+            "username": "prueba_eliminar",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+    )
+
+    rejected = client.post(
+        f"/owner/shops/{shop_id}/delete",
+        data={"confirmation_name": "nombre incorrecto"},
+        follow_redirects=False,
+    )
+    assert rejected.headers["location"] == "/owner?notice=shop_delete_confirmation_invalid"
+    assert len(client.get("/api/barber-shops").json()) == 1
+
+    deleted = client.post(
+        f"/owner/shops/{shop_id}/delete",
+        data={"confirmation_name": "Negocio de prueba"},
+        follow_redirects=False,
+    )
+    assert deleted.headers["location"] == "/owner?notice=shop_deleted"
+    assert client.get("/api/barber-shops").json() == []
+    assert "prueba_eliminar" not in client.get("/owner").text
+
+
 def test_admin_creates_professional_with_selected_days_and_default_hours(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Equipo simple"}).json()["id"]
 

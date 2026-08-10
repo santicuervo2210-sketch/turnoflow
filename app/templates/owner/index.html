@@ -52,6 +52,9 @@
                 <span>Sin usuario cliente</span>
               {% endfor %}
             </div>
+            {% if not users|selectattr("barber_shop_id", "equalto", shop.id)|list %}
+              <button class="btn btn-sm btn-link px-0 mt-1" type="button" data-create-access-for="{{ shop.id }}" data-bs-toggle="modal" data-bs-target="#userModal">Crear acceso para este negocio</button>
+            {% endif %}
           </div>
           {% if commercial.operational %}
             <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -71,6 +74,7 @@
                 <input class="form-control form-control-sm" name="reason" placeholder="Ej: pago vencido">
                 <button class="btn btn-sm btn-outline-danger" type="submit">Suspender acceso</button>
               </form>
+              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-id="{{ shop.id }}" data-delete-shop-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
             </div>
           {% else %}
             <div class="d-flex flex-wrap gap-2">
@@ -83,6 +87,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="btn btn-sm btn-outline-success" type="submit">Habilitar como pago</button>
               </form>
+              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-id="{{ shop.id }}" data-delete-shop-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
             </div>
           {% endif %}
         </div>
@@ -152,6 +157,23 @@
       items.forEach((item) => { item.hidden = !item.dataset.searchText.toLocaleLowerCase("es").includes(query); });
     });
   })();
+
+  document.querySelectorAll("[data-create-access-for]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const select = document.querySelector('#userModal select[name="barber_shop_id"]');
+      if (select) select.value = button.dataset.createAccessFor;
+    });
+  });
+
+  const deleteShopModal = document.getElementById("deleteShopModal");
+  deleteShopModal?.addEventListener("show.bs.modal", (event) => {
+    const button = event.relatedTarget;
+    const form = deleteShopModal.querySelector("form");
+    const name = button.dataset.deleteShopName;
+    form.action = `/owner/shops/${button.dataset.deleteShopId}/delete`;
+    deleteShopModal.querySelector("[data-shop-name]").textContent = name;
+    deleteShopModal.querySelector('input[name="confirmation_name"]').value = "";
+  });
 </script>
 
 <div class="modal fade" id="userModal" tabindex="-1" aria-hidden="true">
@@ -238,8 +260,40 @@
             <label class="form-label">Email</label>
             <input class="form-control" name="main_barber_email" placeholder="Opcional">
           </div>
+          <div class="col-12 mt-3">
+            <span class="stat-label">Acceso del cliente opcional</span>
+            <p class="text-secondary small mb-0">Si lo completas, el negocio y su usuario para iniciar sesion se crean juntos.</p>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Usuario para login</label>
+            <input class="form-control" name="account_username" placeholder="Ej: santino_estudio" autocomplete="off">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Clave temporal</label>
+            <input class="form-control" name="account_password" type="password" minlength="8" placeholder="Minimo 8 caracteres" autocomplete="new-password">
+          </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary" type="submit">Crear negocio</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="deleteShopModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h2 class="modal-title h5">Eliminar negocio</h2><button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button></div>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="modal-body">
+          <div class="alert alert-danger">Esta accion elimina definitivamente el negocio, sus accesos, clientes, profesionales, servicios y turnos.</div>
+          <label class="form-label">Escribi <strong data-shop-name></strong> para confirmar</label>
+          <input class="form-control" name="confirmation_name" required autocomplete="off">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
+          <button class="btn btn-danger" type="submit">Eliminar definitivamente</button>
+        </div>
       </form>
     </div>
   </div>

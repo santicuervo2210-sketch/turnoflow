@@ -7,7 +7,7 @@ import hmac
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import and_, case, func, or_, select, true
+from sqlalchemy import and_, case, delete, func, or_, select, true
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -73,7 +73,13 @@ from app.services.bot_categories import (
     suppress_default_alias,
 )
 from app.services.supply_sales import create_supply_sale
-from app.services.users import authenticate_user, create_password_reset_token, create_user, reset_password_with_token
+from app.services.users import (
+    authenticate_user,
+    create_password_reset_token,
+    create_user,
+    hash_password,
+    reset_password_with_token,
+)
 from app.schemas.business import BotWebhookRequest, BotWebhookResponse
 from app.web.auth import (
     OWNER_RETURN_COOKIE_NAME,
@@ -959,6 +965,14 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "user_activated": "Acceso reactivado.",
         "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
         "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
+        "shop_created": "Negocio creado correctamente.",
+        "shop_created_with_user": "Negocio y acceso de cliente creados correctamente.",
+        "shop_phone_in_use": "Ese telefono ya esta asignado a otro negocio.",
+        "shop_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
+        "shop_access_invalid": "Para crear el acceso completa usuario y una clave de al menos 8 caracteres.",
+        "shop_create_failed": "No se pudo crear el negocio. Revisa los datos e intenta nuevamente.",
+        "shop_delete_confirmation_invalid": "No se elimino el negocio: el nombre de confirmacion no coincide.",
+        "shop_deleted": "Negocio eliminado junto con sus accesos y datos asociados.",
     }
     shops = list(session.scalars(select(BarberShop).order_by(BarberShop.id)).all())
     return _panel_template_response(
@@ -1182,6 +1196,8 @@ def admin_create_barber_shop(
     main_barber_name: str | None = Form(default=None),
     main_barber_phone: str | None = Form(default=None),
     main_barber_email: str | None = Form(default=None),
+    account_username: str | None = Form(default=None),
+    account_password: str | None = Form(default=None),
     next_path: str | None = Form(default="/admin"),
     session: Session = Depends(get_db),
 ) -> RedirectResponse:
@@ -1191,11 +1207,26 @@ def admin_create_barber_shop(
     if not name.strip():
         return _redirect_to(_safe_next_path(next_path))
 
+    clean_phone = phone.strip() if phone and phone.strip() else None
+    clean_address = address.strip() if address and address.strip() else None
     clean_main_barber_name = main_barber_name.strip() if main_barber_name else ""
+    clean_account_username = account_username.strip() if account_username else ""
+    clean_account_password = account_password or ""
+    wants_account = bool(clean_account_username or clean_account_password)
+
+    if wants_account and (not clean_account_username or len(clean_account_password) < 8):
+        return _redirect_to("/owner?notice=shop_access_invalid")
+    if clean_phone and session.scalar(select(BarberShop.id).where(BarberShop.phone == clean_phone)) is not None:
+        return _redirect_to("/owner?notice=shop_phone_in_use")
+    if clean_account_username and session.scalar(
+        select(User.id).where(User.username == clean_account_username)
+    ) is not None:
+        return _redirect_to("/owner?notice=shop_username_in_use")
+
     shop = BarberShop(
         name=name.strip(),
-        phone=phone.strip() if phone else None,
-        address=address.strip() if address else None,
+        phone=clean_phone,
+        address=clean_address,
     )
     if clean_main_barber_name:
         main_barber = Barber(
@@ -1212,8 +1243,52 @@ def admin_create_barber_shop(
             for day_of_week in ALL_WEEKDAYS
         ]
         shop.barbers.append(main_barber)
-    _save(session, shop)
-    return _redirect_to(_safe_next_path(next_path))
+    if wants_account:
+        shop.users.append(
+            User(
+                username=clean_account_username,
+                password_hash=hash_password(clean_account_password),
+                role=UserRole.BUSINESS_ADMIN.value,
+            )
+        )
+    try:
+        _save(session, shop)
+    except IntegrityError:
+        return _redirect_to("/owner?notice=shop_create_failed")
+
+    destination = _safe_next_path(next_path)
+    if destination == "/owner" and wants_account:
+        destination = "/owner?notice=shop_created_with_user"
+    return _redirect_to(destination)
+
+
+@router.post("/owner/shops/{barber_shop_id}/delete")
+def owner_delete_barber_shop(
+    request: Request,
+    barber_shop_id: int,
+    confirmation_name: str = Form(...),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_not_owner(request, session)
+    if redirect is not None:
+        return redirect
+
+    shop = session.get(BarberShop, barber_shop_id)
+    if shop is None:
+        return _redirect_to("/owner")
+    if confirmation_name.strip() != shop.name:
+        return _redirect_to("/owner?notice=shop_delete_confirmation_invalid")
+
+    was_managed_shop = _managed_shop_id(request, session) == barber_shop_id
+    # PostgreSQL aplica ON DELETE CASCADE a todos los datos tenant. El borrado
+    # explicito de usuarios tambien mantiene predecibles los tests sobre SQLite.
+    session.execute(delete(User).where(User.barber_shop_id == barber_shop_id))
+    session.execute(delete(BarberShop).where(BarberShop.id == barber_shop_id))
+    session.commit()
+    response = _redirect_to("/owner?notice=shop_deleted")
+    if was_managed_shop:
+        response.delete_cookie(OWNER_MANAGED_SHOP_COOKIE)
+    return response
 
 
 @router.post("/admin/barber-shops/{barber_shop_id}/suspend")
