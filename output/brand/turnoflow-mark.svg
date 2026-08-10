@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-labelledby="title description">
+  <title id="title">Isotipo TurnoFlow</title>
+  <desc id="description">Bloques de agenda que forman una F en movimiento.</desc>
+  <path fill="#7137FF" d="M24 20h142l-16 30H8z"/>
+  <path fill="#7137FF" d="M34 65h113l-15 28H19z"/>
+  <path fill="#7137FF" d="M30 108h70l-14 26H16z"/>
+  <path fill="#21C7A8" d="M18 147h41l-11 23H7z"/>
+</svg>

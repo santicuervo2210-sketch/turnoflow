@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" role="img" aria-labelledby="title description">
+  <title id="title">TurnoFlow</title>
+  <desc id="description">Logo de TurnoFlow con bloques de agenda en movimiento.</desc>
+  <g transform="translate(28 28)">
+    <path fill="#7137FF" d="M22 10h126l-14 26H8z"/>
+    <path fill="#7137FF" d="M31 50h101l-13 24H18z"/>
+    <path fill="#7137FF" d="M27 88h62l-12 23H15z"/>
+    <path fill="#21C7A8" d="M17 124h36l-10 20H7z"/>
+  </g>
+  <text x="215" y="151" font-family="Segoe UI, Arial, sans-serif" font-size="112" font-weight="700" letter-spacing="-2">
+    <tspan fill="#07111F">Turno</tspan><tspan fill="#7137FF">Flow</tspan>
+  </text>
+</svg>
