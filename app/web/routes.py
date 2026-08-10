@@ -43,6 +43,7 @@ from app.services.appointments import (
     business_hours_for_shop,
     business_working_days_for_shop,
     cancel_appointment,
+    checkout_appointment,
     create_appointment,
     extend_barber_shop_trial,
     get_available_slots,
@@ -323,8 +324,8 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     today_start = datetime.combine(today, time.min)
     today_end = datetime.combine(today, time.max)
     active_statuses = (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
-    active_condition = and_(Appointment.status.in_(active_statuses), Appointment.starts_at >= now)
-    history_condition = or_(Appointment.status.not_in(active_statuses), Appointment.starts_at < now)
+    active_condition = and_(Appointment.status.in_(active_statuses), Appointment.starts_at >= today_start)
+    history_condition = or_(Appointment.status.not_in(active_statuses), Appointment.starts_at < today_start)
 
     metrics_query = (
         select(
@@ -433,12 +434,20 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
     agenda_upcoming_appointments = [
         appointment for appointment in active_appointments if appointment.starts_at.date() > tomorrow
     ]
+    next_today_appointment = next(
+        (
+            appointment
+            for appointment in agenda_today_appointments
+            if _as_naive_datetime(appointment.starts_at) >= now
+        ),
+        None,
+    )
     appointment_history_total = int(appointment_metrics.history_count or 0)
     appointment_history = [
         appointment
         for appointment in appointments
         if appointment.status not in (AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value)
-        or _as_naive_datetime(appointment.starts_at) < now
+        or _as_naive_datetime(appointment.starts_at) < today_start
     ]
     recent_supply_query = _shop_filter(select(SupplySale), shop_id, SupplySale)
     supply_filtered_condition = true()
@@ -608,6 +617,14 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "agenda_today_appointments": agenda_today_appointments,
         "agenda_tomorrow_appointments": agenda_tomorrow_appointments,
         "agenda_upcoming_appointments": agenda_upcoming_appointments,
+        "next_today_appointment_id": next_today_appointment.id if next_today_appointment is not None else None,
+        "appointment_status_labels": {
+            AppointmentStatus.PENDING.value: "Pendiente",
+            AppointmentStatus.CONFIRMED.value: "Confirmado",
+            AppointmentStatus.CANCELLED.value: "Cancelado",
+            AppointmentStatus.COMPLETED.value: "Completado",
+            AppointmentStatus.NO_SHOW.value: "No asistió",
+        },
         "appointment_history": appointment_history,
         "appointment_history_total": appointment_history_total,
         "supply_sales": supply_sales,
@@ -2182,6 +2199,29 @@ def admin_complete_appointment(
         return redirect
     update_appointment_status(session, appointment_id, AppointmentStatus.COMPLETED)
     return _redirect_to("/admin")
+
+
+@router.post("/admin/appointments/{appointment_id}/checkout")
+def admin_checkout_appointment(
+    request: Request,
+    appointment_id: int,
+    payment_method: str = Form(...),
+    session: Session = Depends(get_db),
+):
+    redirect = _redirect_if_appointment_not_allowed(request, session, appointment_id)
+    if redirect is not None:
+        return redirect
+    try:
+        checkout_appointment(session, appointment_id, payment_method)
+    except SchedulingError as exc:
+        return _admin_error_response(
+            request,
+            session,
+            exc.detail,
+            status_code=exc.status_code,
+            selected_module="agenda",
+        )
+    return _redirect_to("/admin?module=agenda")
 
 
 @router.post("/admin/appointments/{appointment_id}/no-show")

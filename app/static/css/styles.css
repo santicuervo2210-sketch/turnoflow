@@ -1226,7 +1226,7 @@ textarea {
   min-width: 0;
 }
 
-.tf-schedule-row summary,
+.tf-schedule-row > summary,
 .tf-schedule-static {
   align-items: center;
   cursor: pointer;
@@ -1237,7 +1237,7 @@ textarea {
   min-width: 0;
 }
 
-.tf-schedule-row summary::-webkit-details-marker {
+.tf-schedule-row > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -1294,7 +1294,7 @@ textarea {
   color: #66728a;
 }
 
-.tf-schedule-row[open] .tf-detail-button {
+.tf-schedule-row[open] > summary .tf-detail-button {
   background: #ede8ff;
   color: var(--tf-primary-dark);
 }
@@ -1312,6 +1312,86 @@ textarea {
 .tf-schedule-detail p {
   color: var(--tf-muted);
   margin: 0.15rem 0 0;
+}
+
+.tf-next-label {
+  background: #ffffff;
+  border: 1px solid #81ddc8;
+  border-radius: 999px;
+  color: #067c63;
+  display: inline-block;
+  font-size: 0.68rem;
+  margin-left: 0.45rem;
+  padding: 0.15rem 0.42rem;
+  text-transform: uppercase;
+}
+
+.tf-schedule-row.is-next > summary {
+  border-left: 3px solid #12a985;
+  padding-left: 0.35rem;
+}
+
+.tf-appointment-actions {
+  align-items: stretch;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: minmax(0, 1fr);
+  width: 100%;
+}
+
+.tf-checkout-form {
+  align-items: end;
+  display: grid;
+  gap: 0.65rem;
+  grid-template-columns: minmax(150px, 220px) minmax(180px, max-content);
+  justify-content: end;
+}
+
+.tf-checkout-form label,
+.tf-move-form label {
+  color: var(--tf-muted);
+  display: grid;
+  font-size: 0.76rem;
+  font-weight: 700;
+  gap: 0.25rem;
+}
+
+.tf-primary-appointment-action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.tf-secondary-actions {
+  border-top: 1px solid var(--tf-line);
+  padding-top: 0.65rem;
+}
+
+.tf-secondary-actions > summary {
+  color: var(--tf-muted);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  list-style-position: inside;
+  text-align: right;
+}
+
+.tf-secondary-actions > div {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  padding-top: 0.65rem;
+}
+
+.tf-secondary-actions form {
+  margin: 0;
+}
+
+.tf-secondary-actions .tf-move-form {
+  align-items: end;
+  display: flex;
+  gap: 0.45rem;
 }
 
 .tf-schedule-row.is-pending .tf-schedule-pill {
@@ -1404,7 +1484,7 @@ textarea {
     justify-content: flex-start;
   }
 
-  .tf-schedule-row summary,
+  .tf-schedule-row > summary,
   .tf-schedule-static {
     grid-template-columns: 68px minmax(0, 1fr) minmax(104px, 0.35fr);
   }
@@ -1556,7 +1636,6 @@ textarea {
 
   .tf-appointment-actions {
     align-items: stretch;
-    flex-direction: column;
   }
 
   .tf-appointment-actions .btn,
@@ -1575,10 +1654,10 @@ textarea {
     align-self: flex-start;
   }
 
-  .tf-schedule-row summary,
+  .tf-schedule-row > summary,
   .tf-schedule-static {
     align-items: stretch;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
     gap: 0.45rem;
   }
 
@@ -1590,11 +1669,21 @@ textarea {
   }
 
   .tf-schedule-pill {
+    grid-column: 2;
     grid-template-columns: 1fr;
   }
 
+  .tf-schedule-state {
+    font-size: 0.72rem;
+    grid-column: 1;
+    min-height: 42px;
+    overflow-wrap: anywhere;
+    padding: 0.4rem;
+  }
+
   .tf-detail-button {
-    grid-column: auto;
+    grid-column: 2;
+    min-height: 42px;
   }
 
   .tf-schedule-static form,
@@ -1603,7 +1692,46 @@ textarea {
   }
 
   .tf-schedule-detail {
+    padding: 0.75rem;
     margin-left: 0;
+  }
+
+  .tf-checkout-form {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .tf-checkout-form .btn,
+  .tf-primary-appointment-action .btn {
+    min-height: 46px;
+    width: 100%;
+  }
+
+  .tf-primary-appointment-action {
+    display: block;
+  }
+
+  .tf-secondary-actions > summary {
+    padding-block: 0.35rem;
+    text-align: left;
+  }
+
+  .tf-secondary-actions > div {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .tf-secondary-actions form,
+  .tf-secondary-actions .btn {
+    width: 100%;
+  }
+
+  .tf-secondary-actions .tf-move-form {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1611,6 +1739,11 @@ textarea {
   .tf-stats-grid,
   .tf-money-grid {
     grid-template-columns: 1fr;
+  }
+
+  .tf-schedule-row > summary,
+  .tf-schedule-static {
+    grid-template-columns: 88px minmax(0, 1fr);
   }
 }
 

@@ -67,6 +67,79 @@ def test_dashboard_groups_monday_booking_as_tomorrow_on_sunday_in_argentina(
     assert "Manana" not in dashboard.text
 
 
+def test_daily_checkout_completes_payment_and_reveals_next_customer(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Flujo diario"}).json()["id"]
+    service_id = client.post(
+        "/api/services",
+        json={"barber_shop_id": shop_id, "name": "Corte", "duration_minutes": 30, "price": "10000"},
+    ).json()["id"]
+    barber_id = client.post(
+        "/api/barbers",
+        json={"barber_shop_id": shop_id, "name": "Profesional", "service_ids": [service_id]},
+    ).json()["id"]
+    client.post(
+        "/api/working-schedules",
+        json={"barber_id": barber_id, "day_of_week": 0, "start_time": "09:00:00", "end_time": "19:00:00"},
+    )
+    current_customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente actual"},
+    ).json()["id"]
+    next_customer_id = client.post(
+        "/api/customers",
+        json={"barber_shop_id": shop_id, "full_name": "Cliente siguiente"},
+    ).json()["id"]
+    current_appointment = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": current_customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-10T10:00:00",
+        },
+    ).json()
+    next_appointment = client.post(
+        "/api/appointments",
+        json={
+            "barber_id": barber_id,
+            "customer_id": next_customer_id,
+            "service_id": service_id,
+            "starts_at": "2026-08-10T11:00:00",
+        },
+    ).json()
+    monkeypatch.setattr(web_routes, "_business_now", lambda: datetime(2026, 8, 10, 10, 15))
+
+    before = client.get("/admin")
+    assert "Cliente actual" in before.text
+    assert "Cobrar y finalizar" in before.text
+    assert "Más opciones" in before.text
+    assert (
+        f'data-appointment-id="{next_appointment["id"]}" data-next-appointment="true"'
+        in before.text
+    )
+
+    checkout = client.post(
+        f'/admin/appointments/{current_appointment["id"]}/checkout',
+        data={"payment_method": "Transferencia"},
+        follow_redirects=False,
+    )
+    assert checkout.status_code == 303
+    assert checkout.headers["location"] == "/admin?module=agenda"
+
+    appointments = client.get("/api/appointments").json()
+    completed = next(item for item in appointments if item["id"] == current_appointment["id"])
+    assert completed["status"] == "completed"
+    assert completed["is_paid"] is True
+    assert completed["payment_method"] == "Transferencia"
+
+    after = client.get("/admin")
+    assert f'data-appointment-id="{current_appointment["id"]}" data-next-appointment="true"' not in after.text
+    assert f'data-appointment-id="{next_appointment["id"]}" data-next-appointment="true"' in after.text
+
+
 def test_admin_dashboard_loads(client: TestClient) -> None:
     response = client.get("/admin")
 
@@ -268,7 +341,7 @@ def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestCl
     rendimiento_response = client.get("/admin?module=rendimiento")
 
     assert agenda_response.status_code == 200
-    assert "Total generado del dia" in agenda_response.text
+    assert "Total generado del día" in agenda_response.text
     assert "action=\"/admin/supply-sales\"" in agenda_response.text
 
     assert rendimiento_response.status_code == 200

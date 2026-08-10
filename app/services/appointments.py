@@ -341,6 +341,28 @@ def mark_appointment_unpaid(session: Session, appointment_id: int) -> Appointmen
     return appointment
 
 
+def checkout_appointment(
+    session: Session,
+    appointment_id: int,
+    payment_method: str,
+) -> Appointment:
+    appointment = _get_required(session, Appointment, appointment_id, "Appointment")
+    if appointment.status not in ACTIVE_BOOKING_STATUSES:
+        raise SchedulingError("Solo se puede cobrar y finalizar un turno activo.")
+
+    normalized_method = payment_method.strip()
+    if not normalized_method or len(normalized_method) > 50:
+        raise SchedulingError("Seleccioná un medio de pago válido.")
+
+    appointment.status = AppointmentStatus.COMPLETED.value
+    appointment.is_paid = True
+    appointment.paid_at = datetime.now(UTC)
+    appointment.payment_method = normalized_method
+    session.commit()
+    session.refresh(appointment)
+    return appointment
+
+
 def reschedule_appointment(session: Session, appointment_id: int, starts_at: datetime) -> Appointment:
     appointment = _get_required(session, Appointment, appointment_id, "Appointment")
     if appointment.status == AppointmentStatus.CANCELLED.value:
