@@ -1010,7 +1010,7 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "shop_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
         "shop_access_invalid": "Para crear el acceso completa usuario y una clave de al menos 8 caracteres.",
         "shop_create_failed": "No se pudo crear el negocio. Revisa los datos e intenta nuevamente.",
-        "shop_delete_confirmation_invalid": "No se elimino el negocio: el nombre de confirmacion no coincide.",
+        "shop_delete_confirmation_invalid": "No se eliminó el negocio: escribí exactamente el nombre indicado.",
         "shop_deleted": "Negocio eliminado junto con sus accesos y datos asociados.",
     }
     shops = list(session.scalars(select(BarberShop).order_by(BarberShop.id)).all())

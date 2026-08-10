@@ -900,6 +900,12 @@ def test_owner_deletes_shop_only_after_exact_name_confirmation(client: TestClien
         },
     )
 
+    owner_page = client.get("/owner")
+    assert owner_page.status_code == 200
+    assert f'data-delete-url="/owner/shops/{shop_id}/delete"' in owner_page.text
+    assert "Para confirmar, escribí exactamente:" in owner_page.text
+    assert "data-delete-submit disabled" in owner_page.text
+
     rejected = client.post(
         f"/owner/shops/{shop_id}/delete",
         data={"confirmation_name": "nombre incorrecto"},
@@ -907,6 +913,9 @@ def test_owner_deletes_shop_only_after_exact_name_confirmation(client: TestClien
     )
     assert rejected.headers["location"] == "/owner?notice=shop_delete_confirmation_invalid"
     assert len(client.get("/api/barber-shops").json()) == 1
+
+    rejection_page = client.get(rejected.headers["location"])
+    assert "No se eliminó el negocio: escribí exactamente el nombre indicado." in rejection_page.text
 
     deleted = client.post(
         f"/owner/shops/{shop_id}/delete",

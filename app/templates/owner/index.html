@@ -74,7 +74,7 @@
                 <input class="form-control form-control-sm" name="reason" placeholder="Ej: pago vencido">
                 <button class="btn btn-sm btn-outline-danger" type="submit">Suspender acceso</button>
               </form>
-              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-id="{{ shop.id }}" data-delete-shop-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
+              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-name="{{ shop.name }}" data-delete-url="/owner/shops/{{ shop.id }}/delete" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
             </div>
           {% else %}
             <div class="d-flex flex-wrap gap-2">
@@ -87,7 +87,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="btn btn-sm btn-outline-success" type="submit">Habilitar como pago</button>
               </form>
-              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-id="{{ shop.id }}" data-delete-shop-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
+              <button class="btn btn-sm btn-outline-danger" type="button" data-delete-shop-name="{{ shop.name }}" data-delete-url="/owner/shops/{{ shop.id }}/delete" data-bs-toggle="modal" data-bs-target="#deleteShopModal">Eliminar</button>
             </div>
           {% endif %}
         </div>
@@ -165,14 +165,28 @@
     });
   });
 
-  const deleteShopModal = document.getElementById("deleteShopModal");
-  deleteShopModal?.addEventListener("show.bs.modal", (event) => {
-    const button = event.relatedTarget;
+  document.addEventListener("DOMContentLoaded", () => {
+    const deleteShopModal = document.getElementById("deleteShopModal");
+    if (!deleteShopModal) return;
+
     const form = deleteShopModal.querySelector("form");
-    const name = button.dataset.deleteShopName;
-    form.action = `/owner/shops/${button.dataset.deleteShopId}/delete`;
-    deleteShopModal.querySelector("[data-shop-name]").textContent = name;
-    deleteShopModal.querySelector('input[name="confirmation_name"]').value = "";
+    const input = deleteShopModal.querySelector('input[name="confirmation_name"]');
+    const submit = deleteShopModal.querySelector("[data-delete-submit]");
+    let expectedName = "";
+
+    deleteShopModal.addEventListener("show.bs.modal", (event) => {
+      const button = event.relatedTarget;
+      expectedName = button?.dataset.deleteShopName || "";
+      form.action = button?.dataset.deleteUrl || "";
+      deleteShopModal.querySelector("[data-shop-name]").textContent = expectedName;
+      input.value = "";
+      input.placeholder = `Escribí ${expectedName}`;
+      submit.disabled = true;
+    });
+
+    input.addEventListener("input", () => {
+      submit.disabled = input.value.trim() !== expectedName;
+    });
   });
 </script>
 
@@ -286,13 +300,14 @@
       <form method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-body">
-          <div class="alert alert-danger">Esta accion elimina definitivamente el negocio, sus accesos, clientes, profesionales, servicios y turnos.</div>
-          <label class="form-label">Escribi <strong data-shop-name></strong> para confirmar</label>
-          <input class="form-control" name="confirmation_name" required autocomplete="off">
+          <div class="alert alert-danger">Esta acción elimina definitivamente el negocio, sus accesos, clientes, profesionales, servicios y turnos.</div>
+          <label class="form-label" for="delete-shop-confirmation">Para confirmar, escribí exactamente:</label>
+          <div class="mb-2"><code class="fs-6" data-shop-name></code></div>
+          <input class="form-control" id="delete-shop-confirmation" name="confirmation_name" required autocomplete="off">
         </div>
         <div class="modal-footer">
           <button class="btn btn-outline-secondary" data-bs-dismiss="modal" type="button">Cancelar</button>
-          <button class="btn btn-danger" type="submit">Eliminar definitivamente</button>
+          <button class="btn btn-danger" type="submit" data-delete-submit disabled>Eliminar definitivamente</button>
         </div>
       </form>
     </div>
