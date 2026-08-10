@@ -1052,6 +1052,7 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
     assert dashboard_response.status_code == 200
     assert "Agenda activa" in dashboard_response.text
     assert "11:00 - Santi Cliente" in dashboard_response.text
+    assert "Corte · Martin" in dashboard_response.text
     assert 'data-admin-module-panel="rendimiento" hidden>' in dashboard_response.text
     history_response = client.get("/admin?module=rendimiento")
     assert history_response.status_code == 200

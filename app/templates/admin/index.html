@@ -8,7 +8,7 @@
       <span class="tf-schedule-time">{{ appointment.starts_at.strftime("%H:%M") }}</span>
       <span class="tf-schedule-pill">
         <strong>{{ appointment.customer.full_name }}</strong>
-        <span>{{ appointment.service.name }}{% if is_next %}<b class="tf-next-label">Siguiente</b>{% endif %}</span>
+        <span>{{ appointment.service.name }} · {{ appointment.barber.name }}{% if is_next %}<b class="tf-next-label">Siguiente</b>{% endif %}</span>
       </span>
       <span class="tf-schedule-state">{{ appointment_status_labels[appointment.status] }}{% if appointment.is_paid %} / pagado{% endif %}</span>
       <span class="tf-detail-button">Gestionar</span>
