@@ -11,7 +11,7 @@
     </div>
     <div class="top-actions">
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
-      <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#userModal" type="button">Crear acceso</button>
+      <button class="btn btn-outline-primary" data-create-access-general data-bs-toggle="modal" data-bs-target="#userModal" type="button">Crear acceso</button>
       <a class="btn btn-outline-secondary" href="/admin">Abrir panel</a>
     </div>
   </section>
@@ -53,7 +53,7 @@
               {% endfor %}
             </div>
             {% if not users|selectattr("barber_shop_id", "equalto", shop.id)|list %}
-              <button class="btn btn-sm btn-link px-0 mt-1" type="button" data-create-access-for="{{ shop.id }}" data-bs-toggle="modal" data-bs-target="#userModal">Crear acceso para este negocio</button>
+              <button class="btn btn-sm btn-link px-0 mt-1" type="button" data-create-access-for="{{ shop.id }}" data-create-access-name="{{ shop.name }}" data-bs-toggle="modal" data-bs-target="#userModal">Crear acceso para este negocio</button>
             {% endif %}
           </div>
           {% if commercial.operational %}
@@ -162,6 +162,17 @@
     button.addEventListener("click", () => {
       const select = document.querySelector('#userModal select[name="barber_shop_id"]');
       if (select) select.value = button.dataset.createAccessFor;
+      const context = document.querySelector("#userModal [data-access-context]");
+      if (context) context.textContent = `Vas a crear el acceso para ${button.dataset.createAccessName}.`;
+    });
+  });
+
+  document.querySelectorAll("[data-create-access-general]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const select = document.querySelector('#userModal select[name="barber_shop_id"]');
+      if (select) select.value = "";
+      const context = document.querySelector("#userModal [data-access-context]");
+      if (context) context.textContent = "Elegí el negocio y creá el acceso de su dueño o encargado.";
     });
   });
 
@@ -198,29 +209,23 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-body row g-3">
           <div class="col-12">
-            <div class="alert alert-light border mb-0">
+            <div class="alert alert-light border mb-0" data-access-context>
               Este acceso es para el dueño o encargado del negocio. Los profesionales se crean después desde el Panel, módulo Equipo.
             </div>
           </div>
           <div class="col-12">
             <label class="form-label">Usuario para login</label>
-            <input class="form-control" name="username" placeholder="Ej: diego_lp" required>
+            <input class="form-control" name="username" maxlength="80" placeholder="Ej: diego_lp" autocomplete="username" required>
           </div>
           <div class="col-12">
             <label class="form-label">Clave temporal</label>
-            <input class="form-control" name="password" type="password" placeholder="Clave inicial que le vas a pasar" required>
+            <input class="form-control" name="password" type="password" minlength="8" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required>
+            <div class="form-text">Es la clave inicial que le vas a entregar al cliente.</div>
           </div>
-          <div class="col-12">
-            <label class="form-label">Rol</label>
-            <select class="form-select" name="role" required>
-              <option value="business_admin">Cliente negocio</option>
-              <option value="owner">Super admin interno</option>
-            </select>
-            <div class="form-text">Para clientes que alquilan el sistema, usa siempre Cliente negocio.</div>
-          </div>
+          <input name="role" type="hidden" value="business_admin">
           <div class="col-12">
             <label class="form-label">Negocio asignado</label>
-            <select class="form-select" name="barber_shop_id">
+            <select class="form-select" name="barber_shop_id" required>
               {% if shops %}
               <option value="">Elegir negocio del cliente</option>
               {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
@@ -228,7 +233,7 @@
               <option value="">Primero crea un negocio</option>
               {% endif %}
             </select>
-            <div class="form-text">Si no aparece ningun negocio, crea el negocio primero. No crees barberos aca.</div>
+            <div class="form-text">Este usuario solo podrá entrar al negocio seleccionado.</div>
           </div>
         </div>
         <div class="modal-footer"><button class="btn btn-primary" type="submit" {% if not shops %}disabled{% endif %}>Crear acceso</button></div>

@@ -866,6 +866,53 @@ def test_owner_can_create_missing_shop_access_from_managed_business_panel(client
     assert "Error interno" not in duplicate.text
 
 
+def test_owner_access_form_explains_validation_and_confirms_creation(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Santino Barber"}).json()["id"]
+
+    owner_page = client.get("/owner")
+    assert owner_page.status_code == 200
+    assert f'data-create-access-for="{shop_id}"' in owner_page.text
+    assert "data-create-access-general" in owner_page.text
+    assert 'select.value = ""' in owner_page.text
+    assert 'name="password" type="password" minlength="8"' in owner_page.text
+    assert 'name="barber_shop_id" required' in owner_page.text
+    assert 'name="role" type="hidden" value="business_admin"' in owner_page.text
+    assert "Super admin interno" not in owner_page.text
+
+    rejected = client.post(
+        "/owner/users",
+        data={
+            "username": "acceso_corto",
+            "password": "corta",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 303
+    assert rejected.headers["location"] == "/owner?notice=user_access_invalid"
+    rejected_page = client.get(rejected.headers["location"])
+    assert "No se creó el acceso" in rejected_page.text
+    assert "Sin usuario cliente" in rejected_page.text
+
+    created = client.post(
+        "/owner/users",
+        data={
+            "username": "santino_acceso",
+            "password": "clave-segura",
+            "role": "business_admin",
+            "barber_shop_id": str(shop_id),
+        },
+        follow_redirects=False,
+    )
+    assert created.status_code == 303
+    assert created.headers["location"] == "/owner?notice=user_access_created"
+    created_page = client.get(created.headers["location"])
+    assert "Acceso creado correctamente" in created_page.text
+    assert "santino_acceso" in created_page.text
+    assert "Sin usuario cliente" not in created_page.text
+
+
 def test_owner_shop_creation_reports_duplicate_phone_without_server_error(client: TestClient) -> None:
     client.post("/api/barber-shops", json={"name": "Existente", "phone": "2230000000"})
 

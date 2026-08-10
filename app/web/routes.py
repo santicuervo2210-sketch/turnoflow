@@ -1004,6 +1004,8 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
         "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
         "user_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
+        "user_access_created": "Acceso creado correctamente. Ya podés entregarle el usuario y la clave al cliente.",
+        "user_access_invalid": "No se creó el acceso. Completá el usuario, una clave de al menos 8 caracteres y elegí un negocio.",
         "shop_created": "Negocio creado correctamente.",
         "shop_created_with_user": "Negocio y acceso de cliente creados correctamente.",
         "shop_phone_in_use": "Ese telefono ya esta asignado a otro negocio.",
@@ -1045,7 +1047,7 @@ def owner_create_user(
 
     destination = _safe_next_path(next_path)
 
-    def invalid_access(message: str, owner_notice: str = ""):
+    def invalid_access(message: str, owner_notice: str = "user_access_invalid"):
         if destination.startswith("/admin"):
             return _admin_error_response(
                 request,
@@ -1080,6 +1082,8 @@ def owner_create_user(
     except IntegrityError:
         session.rollback()
         return invalid_access("Ese nombre de usuario ya existe. Elegí otro.", "user_username_in_use")
+    if destination == "/owner":
+        return _redirect_to("/owner?notice=user_access_created")
     return _redirect_to(destination)
 
 
