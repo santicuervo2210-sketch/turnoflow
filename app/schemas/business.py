@@ -20,6 +20,9 @@ class BarberShopRead(BarberShopCreate):
     access_status: str
     plan: str
     business_category: str
+    visual_theme: str
+    logo_url: str | None
+    logo_key: str | None
     suspended_at: datetime | None
     suspension_reason: str | None
     trial_ends_at: datetime | None

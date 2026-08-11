@@ -10,6 +10,7 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.formparsers import MultiPartParser
 from starlette.responses import RedirectResponse, Response
 from starlette.types import ASGIApp
 
@@ -22,6 +23,7 @@ SESSION_COOKIE_NAME = "turnoflow_session"
 OWNER_RETURN_COOKIE_NAME = "turnoflow_owner_return"
 CSRF_COOKIE_NAME = "turnoflow_csrf"
 CSRF_FORM_FIELD = "csrf_token"
+MAX_PROTECTED_FORM_BYTES = 4 * 1024 * 1024
 PROTECTED_PATH_PREFIXES = (
     "/admin",
     "/owner",
@@ -197,19 +199,40 @@ def _requires_csrf(path: str, method: str) -> bool:
 
 
 async def _csrf_form_token(request: Request) -> str | None:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > MAX_PROTECTED_FORM_BYTES:
+                return None
+        except ValueError:
+            return None
     body = await request.body()
+    if len(body) > MAX_PROTECTED_FORM_BYTES:
+        return None
 
     async def receive():
         return {"type": "http.request", "body": body, "more_body": False}
 
     request._receive = receive
     content_type = request.headers.get("content-type", "")
-    if "application/x-www-form-urlencoded" not in content_type:
-        return None
+    if "application/x-www-form-urlencoded" in content_type:
+        parsed_form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        values = parsed_form.get(CSRF_FORM_FIELD)
+        return values[0] if values else None
 
-    parsed_form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
-    values = parsed_form.get(CSRF_FORM_FIELD)
-    return values[0] if values else None
+    if "multipart/form-data" in content_type:
+        async def stream():
+            yield body
+
+        parsed_form = await MultiPartParser(request.headers, stream()).parse()
+        token = parsed_form.get(CSRF_FORM_FIELD)
+        for value in parsed_form.values():
+            close = getattr(value, "close", None)
+            if close is not None:
+                await close()
+        return token if isinstance(token, str) else None
+
+    return None
 
 
 class AdminAuthMiddleware(BaseHTTPMiddleware):

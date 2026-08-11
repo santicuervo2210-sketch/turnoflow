@@ -46,6 +46,9 @@ BUSINESS_TIMEZONE=America/Argentina/Buenos_Aires
 CRON_SECRET=usar-un-tercer-secreto-aleatorio-de-32-caracteres-o-mas
 BOT_CONVERSATION_TTL_DAYS=30
 WEBHOOK_RECEIPT_TTL_DAYS=30
+INSFORGE_BASE_URL=https://TU_APPKEY.us-east.insforge.app
+INSFORGE_API_KEY=usar-la-clave-administrativa-solo-en-el-servidor
+BRANDING_BUCKET=turnoflow-branding
 ```
 
 Notas:
@@ -60,6 +63,8 @@ Notas:
 - `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` deben ser mayores a 0.
 - Usa `DATABASE_POOL_MODE=serverless` en Vercel y `persistent` solo en un servidor o contenedor permanente.
 - `CRON_SECRET` protege `/internal/maintenance`; Vercel lo envia automaticamente al cron diario.
+- `INSFORGE_API_KEY` es exclusiva del servidor y nunca debe aparecer en HTML, JavaScript ni repositorios.
+- `INSFORGE_BASE_URL` y `BRANDING_BUCKET` habilitan la carga persistente de logos. El bucket `turnoflow-branding` debe ser publico para mostrar esos logos en el panel.
 
 ## Comandos de build y arranque
 
@@ -81,7 +86,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260809_0014`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260811_0015`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -189,6 +194,11 @@ Notas:
 - Las migraciones Alembic hasta `20260809_0014` deben estar aplicadas antes de redeployar.
 
 ## Pasos en InsForge
+
+Estado actual (11/08/2026): la base de datos de produccion sigue alojada en
+Supabase y Vercel se conecta mediante su pooler PostgreSQL. InsForge se usa para
+el almacenamiento publico de logos. No cambies `DATABASE_URL` a InsForge sin una
+migracion de datos planificada y verificada.
 
 Estado actual de los proyectos creados desde CLI:
 

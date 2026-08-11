@@ -163,7 +163,7 @@ def test_admin_modules_expose_fast_daily_controls_without_duplicate_schedule_but
     assert "Sin profesional asignado" not in response.text
     assert 'data-bs-target="#scheduleModal"' not in response.text
     assert "Resumen semanal" in response.text
-    assert "tf-mobile-create" in response.text
+    assert response.text.count('data-bs-target="#appointmentModal"') == 2
 
 
 def test_performance_totals_respect_selected_date_range(db_session: Session) -> None:
@@ -477,6 +477,25 @@ def test_business_admin_sees_only_assigned_shop(client: TestClient, monkeypatch)
     assert own_service_response.status_code == 303
     assert "Servicio propio" in client.get("/admin").text
 
+    admin_csrf_token = _csrf_token_from(client, "/admin")
+    blocked_branding_response = client.post(
+        f"/admin/barber-shops/{shop_two_id}/branding",
+        data={"csrf_token": admin_csrf_token, "visual_theme": "wood"},
+        files={"logo": ("", b"", "application/octet-stream")},
+        follow_redirects=False,
+    )
+    assert blocked_branding_response.status_code == 303
+
+    client.get("/logout")
+    client.post(
+        "/login",
+        data={"username": "owner", "password": "secret", "next_path": "/owner"},
+        follow_redirects=False,
+    )
+    shops = client.get("/api/barber-shops").json()
+    shop_two = next(shop for shop in shops if shop["id"] == shop_two_id)
+    assert shop_two["visual_theme"] == "flow"
+
 
 def test_owner_can_preview_business_user_and_return_without_password(client: TestClient, monkeypatch) -> None:
     shop_one_id = client.post("/api/barber-shops", json={"name": "Negocio para probar"}).json()["id"]
@@ -743,6 +762,14 @@ def test_admin_post_without_csrf_is_rejected_when_auth_enabled(client: TestClien
 
     assert response.status_code == 403
     assert "Sin token" not in client.get("/admin").text
+
+    multipart_response = client.post(
+        f"/admin/barber-shops/{shop_id}/branding",
+        data={"visual_theme": "wood"},
+        files={"logo": ("logo.png", b"contenido", "image/png")},
+        follow_redirects=False,
+    )
+    assert multipart_response.status_code == 403
 
 
 def test_bot_simulator_post_without_csrf_is_rejected_when_auth_enabled(client: TestClient, monkeypatch) -> None:
@@ -2032,6 +2059,29 @@ def test_admin_general_hours_apply_only_selected_working_days(client: TestClient
     configuration = client.get("/admin?module=configuracion")
     assert "Días y horario general" in configuration.text
     assert "Los días desmarcados quedan cerrados" in configuration.text
+
+
+def test_admin_can_customize_business_theme(client: TestClient) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Estudio Visual"}).json()["id"]
+    client.get(f"/owner/shops/{shop_id}/manage", follow_redirects=False)
+
+    response = client.post(
+        f"/admin/barber-shops/{shop_id}/branding",
+        data={"visual_theme": "wood"},
+        files={"logo": ("", b"", "application/octet-stream")},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin?module=configuracion&notice=branding_saved"
+    shop = client.get("/api/barber-shops").json()[0]
+    assert shop["visual_theme"] == "wood"
+
+    dashboard = client.get("/admin?module=configuracion")
+    assert 'class="tf-theme-wood' in dashboard.text
+    assert "Madera clara" in dashboard.text
+    assert "Estudio Visual" in dashboard.text
+    assert "Gestionado con TurnoFlow" in dashboard.text
 
 
 def test_admin_weekly_schedule_replaces_days_and_accepts_sunday(client: TestClient) -> None:

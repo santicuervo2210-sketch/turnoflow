@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     cron_secret: str = ""
     bot_conversation_ttl_days: int = 30
     webhook_receipt_ttl_days: int = 30
+    insforge_base_url: str = ""
+    insforge_api_key: str = ""
+    branding_bucket: str = "turnoflow-branding"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

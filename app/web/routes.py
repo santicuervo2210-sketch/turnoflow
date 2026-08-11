@@ -5,7 +5,7 @@ import hashlib
 import hmac
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, case, delete, func, or_, select, true
@@ -74,6 +74,14 @@ from app.services.bot_categories import (
     set_business_category,
     suppress_default_alias,
 )
+from app.services.branding import (
+    ALLOWED_VISUAL_THEMES,
+    MAX_LOGO_UPLOAD_BYTES,
+    BrandingError,
+    delete_business_logo,
+    prepare_logo_image,
+    upload_business_logo,
+)
 from app.services.supply_sales import create_supply_sale
 from app.services.users import (
     authenticate_user,
@@ -104,6 +112,13 @@ BOT_SIMULATOR_FROM_PHONE = "+5491100000000"
 WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
 ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
 OWNER_MANAGED_SHOP_COOKIE = "turnoflow_owner_shop"
+VISUAL_THEME_OPTIONS = (
+    ("flow", "Flow suave", "Color sutil y moderno"),
+    ("marble", "Marmol claro", "Vetas grises muy livianas"),
+    ("wood", "Madera clara", "Listones calidos y discretos"),
+    ("brick", "Ladrillo suave", "Textura urbana sin oscurecer"),
+    ("blush", "Rosa mineral", "Marmoleado rosa apagado"),
+)
 
 
 def _business_now() -> datetime:
@@ -574,6 +589,15 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
             .order_by(BotServiceAlias.alias)
         ).all()
     ) if shop_ids else []
+    branding_shop = shops[0] if shop_id is not None and shops else None
+    active_visual_theme = (
+        branding_shop.visual_theme
+        if branding_shop is not None and branding_shop.visual_theme in ALLOWED_VISUAL_THEMES
+        else "flow"
+    )
+    notice_messages = {
+        "branding_saved": "La identidad visual del negocio se actualizo correctamente.",
+    }
     context = {
         "request": request,
         "now": now,
@@ -631,6 +655,9 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "today_supply_sales": today_supply_sales,
         "bot_settings_by_shop": get_or_create_bot_settings_map(session, [shop.id for shop in shops]),
         "business_category_labels": CATEGORY_LABELS,
+        "visual_theme_options": VISUAL_THEME_OPTIONS,
+        "branding_shop": branding_shop,
+        "active_visual_theme": active_visual_theme,
         "bot_category_defaults_by_shop": {
             shop.id: factory_defaults_for_category(shop.business_category) for shop in shops
         },
@@ -654,6 +681,7 @@ def _dashboard_context(request: Request, session: Session, shop_id: int | None =
         "is_owner_view": _is_owner_request(request, session) or not settings.auth_enabled,
         "is_previewing_business": _owner_return_subject(request) is not None,
         "managed_shop": shops[0] if shop_id is not None and shops and _is_owner_request(request, session) else None,
+        "notice": notice_messages.get(request.query_params.get("notice", "")),
         "stats": {
             "shops": len(shops),
             "active_shops": len([shop for shop in shops if barber_shop_has_access(shop)]),
@@ -1472,6 +1500,56 @@ def admin_update_business_hours(
                 matching_schedule.is_active = True
     session.commit()
     return _redirect_to("/admin?module=configuracion")
+
+
+@router.post("/admin/barber-shops/{barber_shop_id}/branding")
+def admin_update_business_branding(
+    request: Request,
+    barber_shop_id: int,
+    visual_theme: str = Form(...),
+    remove_logo: bool = Form(default=False),
+    logo: UploadFile | None = File(default=None),
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    shop = session.get(BarberShop, barber_shop_id)
+    if shop is None:
+        return _redirect_to("/admin")
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    if visual_theme not in ALLOWED_VISUAL_THEMES:
+        return _admin_error_response(
+            request,
+            session,
+            "Selecciona un estilo visual valido.",
+            selected_module="configuracion",
+        )
+
+    try:
+        if logo is not None and logo.filename:
+            raw_logo = logo.file.read(MAX_LOGO_UPLOAD_BYTES + 1)
+            processed_logo = prepare_logo_image(raw_logo)
+            logo_url, logo_key = upload_business_logo(barber_shop_id, processed_logo)
+            shop.logo_url = logo_url
+            shop.logo_key = logo_key
+        elif remove_logo and shop.logo_key:
+            delete_business_logo(shop.logo_key)
+            shop.logo_url = None
+            shop.logo_key = None
+    except BrandingError as exc:
+        return _admin_error_response(
+            request,
+            session,
+            str(exc),
+            selected_module="configuracion",
+        )
+    finally:
+        if logo is not None:
+            logo.file.close()
+
+    shop.visual_theme = visual_theme
+    session.commit()
+    return _redirect_to("/admin?module=configuracion&notice=branding_saved")
 
 
 @router.post("/admin/services")

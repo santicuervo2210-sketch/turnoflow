@@ -24,6 +24,10 @@ class BarberShop(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("plan IN ('basic', 'premium')", name="ck_barber_shops_plan"),
         CheckConstraint(
+            "visual_theme IN ('flow', 'marble', 'wood', 'brick', 'blush')",
+            name="ck_barber_shops_visual_theme",
+        ),
+        CheckConstraint(
             "business_category IN ('barberia', 'unas', 'pestanas', 'masajes', 'tatuajes', 'general')",
             name="ck_barber_shops_business_category",
         ),
@@ -57,6 +61,14 @@ class BarberShop(TimestampMixin, Base):
         server_default="general",
         nullable=False,
     )
+    visual_theme: Mapped[str] = mapped_column(
+        String(20),
+        default="flow",
+        server_default="flow",
+        nullable=False,
+    )
+    logo_url: Mapped[str | None] = mapped_column(Text)
+    logo_key: Mapped[str | None] = mapped_column(String(512))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
     trial_ends_at: Mapped[datetime | None] = mapped_column(

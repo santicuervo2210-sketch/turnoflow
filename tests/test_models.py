@@ -97,6 +97,9 @@ def test_barber_shop_defaults_to_basic_plan() -> None:
         session.refresh(shop)
 
         assert shop.plan == "basic"
+        assert shop.visual_theme == "flow"
+        assert shop.logo_url is None
+        assert shop.logo_key is None
         assert shop.trial_ends_at is not None
         remaining = shop.trial_ends_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)
         assert timedelta(days=14) < remaining <= timedelta(days=15)
