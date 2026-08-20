@@ -315,6 +315,10 @@ def test_security_headers_are_present(client: TestClient) -> None:
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    content_security_policy = response.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in content_security_policy
+    assert "frame-ancestors 'none'" in content_security_policy
+    assert "form-action 'self'" in content_security_policy
     assert "camera=()" in response.headers["Permissions-Policy"]
     assert response.headers["X-Request-ID"] == "browser-request-123"
 
