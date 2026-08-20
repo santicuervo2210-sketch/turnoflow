@@ -5,14 +5,14 @@
   {% if notice %}<div class="alert alert-info mb-0">{{ notice }}</div>{% endif %}
   <section class="page-head d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
-      <span class="stat-label">Owner</span>
-      <h1 class="h3 mb-1">Clientes y accesos</h1>
-      <p class="text-secondary mb-0">Crea el acceso y usa Probar como cliente para revisar exactamente lo que vera cada negocio. Los profesionales se cargan desde Equipo.</p>
+      <span class="stat-label">Administración TurnoFlow</span>
+      <h1 class="h3 mb-1">Control de negocios</h1>
+      <p class="text-secondary mb-0">Altas, accesos y estado comercial de cada cliente.</p>
     </div>
     <div class="top-actions">
-      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
-      <button class="btn btn-outline-primary" data-create-access-general data-bs-toggle="modal" data-bs-target="#userModal" type="button">Crear acceso</button>
-      <a class="btn btn-outline-secondary" href="/admin">Abrir panel</a>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button"><i data-lucide="store" aria-hidden="true"></i><span>Nuevo negocio</span></button>
+      <button class="btn btn-outline-primary" data-create-access-general data-bs-toggle="modal" data-bs-target="#userModal" type="button"><i data-lucide="key-round" aria-hidden="true"></i><span>Crear acceso</span></button>
+      <a class="btn btn-outline-secondary" href="/admin"><i data-lucide="layout-dashboard" aria-hidden="true"></i><span>Abrir panel</span></a>
     </div>
   </section>
 
@@ -21,9 +21,9 @@
       <div>
         <span class="stat-label">Negocios</span>
         <h2 class="h5 mb-1">Estado comercial por cliente</h2>
-        <p class="text-secondary small mb-0">Si un negocio no paga, suspendelo aca y pierde acceso al panel y al bot.</p>
+        <p class="text-secondary small mb-0">Si un negocio no paga, suspendelo acá y pierde acceso al panel y al bot.</p>
       </div>
-      <input class="form-control tf-owner-search" type="search" placeholder="Buscar negocio, telefono o usuario" aria-label="Buscar negocios" data-list-search="owner-shops">
+      <input class="form-control tf-owner-search" type="search" placeholder="Buscar negocio, teléfono o usuario" aria-label="Buscar negocios" data-list-search="owner-shops">
     </div>
     <div class="stack-list">
       {% for shop in shops %}
@@ -62,7 +62,7 @@
               {% if shop.trial_ends_at %}
                 <form action="/owner/shops/{{ shop.id }}/trial/extend" method="post">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                  <button class="btn btn-sm btn-outline-secondary" type="submit">Extender 15 dias</button>
+                  <button class="btn btn-sm btn-outline-secondary" type="submit">Extender 15 días</button>
                 </form>
                 <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -78,10 +78,10 @@
             </div>
           {% else %}
             <div class="d-flex flex-wrap gap-2">
-              <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Revisar configuracion</a>
+              <a class="btn btn-sm btn-outline-primary" href="/owner/shops/{{ shop.id }}/manage">Revisar configuración</a>
               <form action="/owner/shops/{{ shop.id }}/trial/extend" method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <button class="btn btn-sm btn-outline-secondary" type="submit">Dar 15 dias</button>
+                <button class="btn btn-sm btn-outline-secondary" type="submit">Dar 15 días</button>
               </form>
               <form action="/admin/barber-shops/{{ shop.id }}/activate" method="post">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -94,7 +94,7 @@
       {% else %}
         <div class="empty-state text-secondary">
           <h3 class="h5 mb-1">Todavía no hay negocios creados</h3>
-          <p class="mb-2">Crea primero el negocio del cliente. Despues vas a poder darle un usuario para entrar.</p>
+          <p class="mb-2">Creá primero el negocio del cliente. Después vas a poder darle un usuario para entrar.</p>
           <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear primer negocio</button>
         </div>
       {% endfor %}
@@ -230,7 +230,7 @@
               <option value="">Elegir negocio del cliente</option>
               {% for shop in shops %}<option value="{{ shop.id }}">{{ shop.name }}</option>{% endfor %}
               {% else %}
-              <option value="">Primero crea un negocio</option>
+              <option value="">Primero creá un negocio</option>
               {% endif %}
             </select>
             <div class="form-text">Este usuario solo podrá entrar al negocio seleccionado.</div>

@@ -6,16 +6,16 @@
     <div class="login-brand-panel">
       <a class="login-brand" href="/login">TurnoFlow</a>
       <div>
-        <span class="login-kicker">Gestion simple, trabajo ordenado</span>
+        <span class="login-kicker">Gestión simple, trabajo ordenado</span>
         <h1>Tu jornada empieza con claridad.</h1>
-        <p>Agenda, clientes y caja listos para el dia.</p>
+        <p>Agenda, clientes y caja listos para el día.</p>
       </div>
       <span class="login-security-note">Acceso privado para cada negocio</span>
     </div>
     <div class="login-form-panel">
       <span class="stat-label">Panel de control</span>
       <h2 id="login-title">Bienvenido</h2>
-      <p class="text-secondary">Ingresa con el usuario y la clave de tu negocio.</p>
+      <p class="text-secondary">Ingresá con el usuario y la clave de tu negocio.</p>
       {% if error %}<div class="alert alert-danger py-2" role="alert">{{ error }}</div>{% endif %}
       <form action="/login" method="post" class="d-grid gap-3">
         <input type="hidden" name="next_path" value="{{ next_path }}">
@@ -29,7 +29,7 @@
         </div>
         <button class="btn btn-primary btn-lg" type="submit">Entrar al panel</button>
       </form>
-      <p class="login-help">Si no podes ingresar, contacta a quien administra tu cuenta.</p>
+      <p class="login-help">Si no podés ingresar, contactá a quien administra tu cuenta.</p>
     </div>
   </section>
 </div>

@@ -145,7 +145,7 @@ def test_admin_dashboard_loads(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "TurnoFlow" in response.text
-    assert "Panel de control" in response.text
+    assert "Agenda de hoy" in response.text
     assert response.text.count("data-admin-module-panel=") == 6
     assert 'data-admin-module-panel="agenda"' in response.text
     assert 'data-admin-module-panel="clientes"' in response.text
@@ -163,7 +163,7 @@ def test_admin_modules_expose_fast_daily_controls_without_duplicate_schedule_but
     assert "Sin profesional asignado" not in response.text
     assert 'data-bs-target="#scheduleModal"' not in response.text
     assert "Resumen semanal" in response.text
-    assert response.text.count('data-bs-target="#appointmentModal"') == 2
+    assert response.text.count('data-bs-target="#appointmentModal"') == 1
 
 
 def test_performance_totals_respect_selected_date_range(db_session: Session) -> None:
@@ -325,12 +325,12 @@ def test_admin_modules_load_once_and_only_selected_panel_is_visible(client: Test
 
     assert agenda_response.status_code == 200
     assert "Agenda del negocio" in agenda_response.text
-    assert "Precios, duracion y oferta" in agenda_response.text
+    assert "Precios, duración y oferta" in agenda_response.text
     assert 'data-admin-module-panel="agenda" >' in agenda_response.text
     assert 'data-admin-module-panel="servicios" hidden>' in agenda_response.text
 
     assert services_response.status_code == 200
-    assert "Precios, duracion y oferta" in services_response.text
+    assert "Precios, duración y oferta" in services_response.text
     assert "Agenda del negocio" in services_response.text
     assert 'data-admin-module-panel="agenda" hidden>' in services_response.text
     assert 'data-admin-module-panel="servicios" >' in services_response.text
@@ -345,7 +345,7 @@ def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestCl
     assert "action=\"/admin/supply-sales\"" in agenda_response.text
 
     assert rendimiento_response.status_code == 200
-    assert "Historial y caja" in rendimiento_response.text
+    assert "Ingresos e historial" in rendimiento_response.text
     assert "Ingresos extra registrados" in rendimiento_response.text
     assert 'data-admin-module-panel="agenda" hidden>' in rendimiento_response.text
     assert 'data-admin-module-panel="rendimiento" >' in rendimiento_response.text
@@ -1098,13 +1098,13 @@ def test_admin_manual_appointment_is_confirmed_and_moves_to_history_when_cancell
 
     dashboard_response = client.get("/admin")
     assert dashboard_response.status_code == 200
-    assert "Agenda activa" in dashboard_response.text
+    assert "Turnos próximos" in dashboard_response.text
     assert "11:00 - Santi Cliente" in dashboard_response.text
     assert "Corte · Martin" in dashboard_response.text
     assert 'data-admin-module-panel="rendimiento" hidden>' in dashboard_response.text
     history_response = client.get("/admin?module=rendimiento")
     assert history_response.status_code == 200
-    assert "Historial y caja" in history_response.text
+    assert "Ingresos e historial" in history_response.text
 
     cancel_response = client.post(f"/admin/appointments/{appointment_id}/cancel")
     assert cancel_response.status_code == 200
@@ -1937,13 +1937,13 @@ def test_owner_panel_shows_commercial_access_status(client: TestClient) -> None:
     assert owner_response.status_code == 200
     assert "Estado comercial por cliente" in owner_response.text
     assert "Pago Demo" in owner_response.text
-    assert "Prueba: 15 dias" in owner_response.text
-    assert "Extender 15 dias" in owner_response.text
+    assert "Prueba: 15 días" in owner_response.text
+    assert "Extender 15 días" in owner_response.text
     assert "Marcar como pago" in owner_response.text
     assert "plan basic" in owner_response.text
     assert "Crear negocio" in owner_response.text
     assert "Crear acceso de cliente" in owner_response.text
-    assert "Los profesionales se cargan desde Equipo" in owner_response.text
+    assert "Control de negocios" in owner_response.text
 
     suspend_response = client.post(
         f"/admin/barber-shops/{shop_id}/suspend",

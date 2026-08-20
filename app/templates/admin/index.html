@@ -76,7 +76,7 @@
   </details>
 {% endmacro %}
 <div class="tf-workspace">
-  <aside class="tf-sidebar" aria-label="Modulos de gestion">
+  <aside class="tf-sidebar" aria-label="Módulos de gestión">
     <a class="tf-sidebar-brand" href="/admin">
       {% if branding_shop %}
         {% if branding_shop.logo_url %}
@@ -90,12 +90,12 @@
       {% endif %}
     </a>
     <nav class="tf-sidebar-nav">
-      <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Panel de control</a>
-      <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
-      <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
-      <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
-      <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Configuración</a>
-      <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Rendimiento</a>
+      <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}"><i data-lucide="calendar-days" aria-hidden="true"></i><span>Agenda</span></a>
+      <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}"><i data-lucide="users" aria-hidden="true"></i><span>Clientes</span></a>
+      <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}"><i data-lucide="list-checks" aria-hidden="true"></i><span>Servicios</span></a>
+      <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}"><i data-lucide="user-round-cog" aria-hidden="true"></i><span>Equipo</span></a>
+      <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}"><i data-lucide="settings-2" aria-hidden="true"></i><span>Ajustes</span></a>
+      <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>Caja</span></a>
     </nav>
   </aside>
 
@@ -107,16 +107,24 @@
       <span class="tf-business-logo-fallback" aria-hidden="true">{{ branding_shop.name[:1]|upper }}</span>
     {% endif %}
     <span><strong>{{ branding_shop.name }}</strong><small>Gestionado con TurnoFlow</small></span>
+    {% if is_previewing_business %}
+      <form action="/owner/return" method="post" class="tf-mobile-session-action">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" title="Volver a superadmin" aria-label="Volver a superadmin"><i data-lucide="undo-2" aria-hidden="true"></i></button>
+      </form>
+    {% elif current_user or is_owner_view %}
+      <a class="tf-mobile-session-action" href="/logout" title="Cerrar sesión" aria-label="Cerrar sesión"><i data-lucide="log-out" aria-hidden="true"></i></a>
+    {% endif %}
   </div>
   {% endif %}
 
-  <nav class="tf-mobile-nav" aria-label="Modulos de gestion">
-    <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}">Panel</a>
-    <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}">Clientes</a>
-    <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}">Servicios</a>
-    <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}">Equipo</a>
-    <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}">Config</a>
-    <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}">Caja</a>
+  <nav class="tf-mobile-nav" aria-label="Módulos de gestión">
+    <a href="/admin?module=agenda" data-admin-module-link="agenda" class="{% if current_module == 'agenda' %}active{% endif %}"><i data-lucide="calendar-days" aria-hidden="true"></i><span>Agenda</span></a>
+    <a href="/admin?module=clientes" data-admin-module-link="clientes" class="{% if current_module == 'clientes' %}active{% endif %}"><i data-lucide="users" aria-hidden="true"></i><span>Clientes</span></a>
+    <a href="/admin?module=servicios" data-admin-module-link="servicios" class="{% if current_module == 'servicios' %}active{% endif %}"><i data-lucide="list-checks" aria-hidden="true"></i><span>Servicios</span></a>
+    <a href="/admin?module=equipo" data-admin-module-link="equipo" class="{% if current_module == 'equipo' %}active{% endif %}"><i data-lucide="user-round-cog" aria-hidden="true"></i><span>Equipo</span></a>
+    <a href="/admin?module=configuracion" data-admin-module-link="configuracion" class="{% if current_module == 'configuracion' %}active{% endif %}"><i data-lucide="settings-2" aria-hidden="true"></i><span>Ajustes</span></a>
+    <a href="/admin?module=rendimiento" data-admin-module-link="rendimiento" class="{% if current_module == 'rendimiento' %}active{% endif %}"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i><span>Caja</span></a>
   </nav>
 
   <div class="tf-main">
@@ -142,13 +150,13 @@
     <div data-admin-module-panel="agenda" {% if current_module != "agenda" %}hidden{% endif %}>
     <section class="tf-hero" id="agenda">
       <div>
-        <span class="stat-label">Agenda y caja</span>
-        <h1>Panel de control</h1>
-        <p>Turnos de hoy y próximos, cobros y acciones importantes en un solo lugar.</p>
+        <span class="stat-label">Organización diaria</span>
+        <h1>Agenda de hoy</h1>
+        <p>Tu día ordenado: quién viene, a qué hora y qué queda por cobrar.</p>
       </div>
       <div class="tf-hero-actions">
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Crear turno</button>
-        <a class="btn btn-outline-secondary" href="/admin?module=rendimiento">Ver caja</a>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button"><i data-lucide="plus" aria-hidden="true"></i><span>Nuevo turno</span></button>
+        <a class="btn btn-outline-secondary" href="/admin?module=rendimiento"><i data-lucide="wallet-cards" aria-hidden="true"></i><span>Ver caja</span></a>
       </div>
     </section>
 
@@ -158,7 +166,7 @@
         <div class="stat-value">{{ agenda_today_appointments|length }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Agenda activa</div>
+        <div class="stat-label">Turnos próximos</div>
         <div class="stat-value">{{ stats.active_appointments }}</div>
       </div>
       <div class="stat-card">
@@ -177,9 +185,9 @@
         <input type="hidden" name="module" value="agenda">
         <input class="form-control" type="date" name="start_date" value="{{ dashboard_filters.start_date }}" aria-label="Fecha inicio">
         <input class="form-control" type="date" name="end_date" value="{{ dashboard_filters.end_date }}" aria-label="Fecha fin">
-        <select class="form-select" name="per_page" aria-label="Turnos por pagina">
+        <select class="form-select" name="per_page" aria-label="Turnos por página">
           {% for option in [25, 50, 100, 200] %}
-            <option value="{{ option }}" {% if dashboard_filters.per_page == option %}selected{% endif %}>{{ option }} por pagina</option>
+            <option value="{{ option }}" {% if dashboard_filters.per_page == option %}selected{% endif %}>{{ option }} por página</option>
           {% endfor %}
         </select>
         <input type="hidden" name="page" value="1">
@@ -187,8 +195,8 @@
       </form>
       <div class="tf-range-actions mt-2">
         <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="0">Hoy</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 dias</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 dias</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 días</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 días</button>
         <a class="btn btn-sm btn-link" href="/admin?module=agenda">Limpiar</a>
       </div>
       <div class="tf-pagination-row">
@@ -209,10 +217,9 @@
         <div>
           <span class="stat-label">Operación diaria</span>
           <h2>Agenda del negocio</h2>
-          <p>Hoy primero, después mañana, próximos e historial. Si alguien llama o escribe por fuera del bot, creás el turno desde acá.</p>
+          <p>Hoy primero, después mañana y los próximos turnos.</p>
         </div>
         <span class="tf-count-pill">{{ stats.active_appointments }} turno{% if stats.active_appointments != 1 %}s{% endif %}</span>
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#appointmentModal" type="button">Agregar turno</button>
       </div>
 
       <div class="tf-agenda-sections">
@@ -414,7 +421,7 @@
         </div>
       {% else %}
         <div class="tf-search-row mb-3">
-          <input class="form-control" type="search" placeholder="Buscar por nombre, telefono o nota" aria-label="Buscar clientes" data-list-search="customers">
+          <input class="form-control" type="search" placeholder="Buscar por nombre, teléfono o nota" aria-label="Buscar clientes" data-list-search="customers">
           <span class="text-secondary small">{{ customers|length }} clientes</span>
         </div>
         <div class="tf-list-table-wrap">
@@ -443,7 +450,7 @@
       <div class="tf-panel-head">
         <div>
           <span class="stat-label">Servicios</span>
-          <h2>Precios, duracion y oferta</h2>
+          <h2>Precios, duración y oferta</h2>
         </div>
         <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#serviceModal" type="button">Nuevo servicio</button>
       </div>
@@ -475,7 +482,7 @@
             </form>
           </details>
         {% else %}
-          <div class="empty-state">Crea el primer servicio para empezar a tomar turnos.</div>
+          <div class="empty-state">Creá el primer servicio para empezar a tomar turnos.</div>
         {% endfor %}
       </div>
     </section>
@@ -487,7 +494,7 @@
         <div>
           <span class="stat-label">Equipo</span>
           <h2>Profesionales y horarios</h2>
-          <p>Aca se administra quien atiende, que servicio realiza y cuando trabaja.</p>
+          <p>Acá se administra quién atiende, qué servicio realiza y cuándo trabaja.</p>
         </div>
         <div class="tf-action-row">
           <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#barberModal" type="button">Profesional</button>
@@ -504,7 +511,7 @@
                 <div>
                   <strong>{{ barber.name }}</strong>
                   <span>{{ barber.phone or "Sin teléfono" }}</span>
-                  <span>{{ barber_days|length }} dias / {{ barber_hours[0].strftime('%H:%M') }} - {{ barber_hours[1].strftime('%H:%M') }}</span>
+                  <span>{{ barber_days|length }} días / {{ barber_hours[0].strftime('%H:%M') }} - {{ barber_hours[1].strftime('%H:%M') }}</span>
                 </div>
                 <span class="btn btn-sm btn-outline-secondary">Ver y editar</span>
               </summary>
@@ -603,9 +610,9 @@
     <section class="tf-panel" id="configuracion">
       <div class="tf-panel-head">
         <div>
-          <span class="stat-label">Configuración</span>
-          <h2>Negocio y saludo del bot</h2>
-          <p>El negocio solo configura lo básico. La IA y WhatsApp quedan para la conexión posterior.</p>
+          <span class="stat-label">Ajustes</span>
+          <h2>Negocio y preferencias</h2>
+          <p>Identidad, horarios y respuestas automáticas en un solo lugar.</p>
         </div>
         {% if is_owner_view %}
           <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#shopModal" type="button">Crear negocio</button>
@@ -724,8 +731,9 @@
             <div class="empty-state">Sin negocios.</div>
           {% endfor %}
         </div>
-        <div class="tf-stack">
-          <h3 class="tf-subtitle">Bot</h3>
+        <details class="tf-settings-disclosure">
+          <summary><span><i data-lucide="message-circle-more" aria-hidden="true"></i><strong>Asistente automático</strong></span><small>Saludo, rubro y palabras del bot</small></summary>
+          <div class="tf-stack mt-3">
           {% for shop in shops %}
             {% set settings = bot_settings_by_shop[shop.id] %}
             <form action="/admin/bot-settings/{{ shop.id }}" method="post" class="tf-data-card">
@@ -748,7 +756,7 @@
               <textarea class="form-control" name="greeting_message" rows="3" required>{{ settings.greeting_message }}</textarea>
               <label class="form-label mt-2">Menu inicial</label>
               <textarea class="form-control" name="menu_message" rows="4" required>{{ settings.menu_message }}</textarea>
-              <button class="btn btn-primary mt-2" type="submit">Guardar configuracion</button>
+              <button class="btn btn-primary mt-2" type="submit">Guardar configuración</button>
             </form>
             {% if is_owner_view %}<article class="tf-data-card">
               <div class="tf-card-title-row">
@@ -797,9 +805,10 @@
               {% endfor %}
             </article>{% endif %}
           {% else %}
-            <div class="empty-state">Crea un negocio para configurar el saludo automatico.</div>
+            <div class="empty-state">Creá un negocio para configurar el saludo automático.</div>
           {% endfor %}
-        </div>
+          </div>
+        </details>
       </div>
     </section>
     </div>
@@ -808,9 +817,9 @@
     <section class="tf-panel" id="rendimiento">
       <div class="tf-panel-head">
         <div>
-          <span class="stat-label">Rendimiento</span>
-          <h2>Historial y caja</h2>
-          <p>Control de completados, cancelados, vencidos, cobros e insumos vendidos.</p>
+          <span class="stat-label">Caja</span>
+          <h2>Ingresos e historial</h2>
+          <p>Cobros, extras y resultado de cada turno.</p>
         </div>
       </div>
       <form action="/admin" method="get" class="tf-filter-bar mb-3" data-date-range-form>
@@ -821,8 +830,8 @@
       </form>
       <div class="tf-range-actions mb-3">
         <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="0">Hoy</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 dias</button>
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 dias</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="7">7 días</button>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-range-days="30">30 días</button>
         <a class="btn btn-sm btn-link" href="/admin?module=rendimiento">Todo</a>
       </div>
       <div class="tf-money-grid">
@@ -914,7 +923,7 @@
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title h5">Agregar turno</h2>
+        <h2 class="modal-title h5">Nuevo turno</h2>
         <button class="btn-close" data-bs-dismiss="modal" type="button" aria-label="Cerrar"></button>
       </div>
       <form action="/admin/appointments" method="post">
@@ -1120,7 +1129,7 @@
                 </label>
               {% endfor %}
             </div>
-            <div class="form-text">Todos vienen seleccionados. Desmarca domingo o cualquier dia libre.</div>
+            <div class="form-text">Todos vienen seleccionados. Desmarcá domingo o cualquier día libre.</div>
           </div>
           <div class="col-6">
             <label class="form-label">Desde</label>

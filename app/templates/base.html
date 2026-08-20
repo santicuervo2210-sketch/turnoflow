@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title or "TurnoFlow" }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="/static/css/styles.css?v=20260819-1" rel="stylesheet">
+    <link href="/static/css/styles.css?v=20260819-2" rel="stylesheet">
   </head>
   <body class="{% if auth_page %}auth-page{% else %}tf-theme-{{ active_visual_theme|default('flow') }}{% endif %}">
     {% if not auth_page %}
     <nav class="navbar navbar-expand-lg app-navbar">
       <div class="container-fluid px-4">
-        <a class="navbar-brand fw-bold" href="/admin">TurnoFlow</a>
+        <a class="navbar-brand" href="/admin"><span class="tf-product-mark" aria-hidden="true">TF</span><span>TurnoFlow</span></a>
         <div class="navbar-nav flex-row gap-2">
           {% if is_previewing_business %}
             <span class="navbar-text badge text-bg-warning align-self-center">Vista cliente</span>
@@ -21,13 +21,9 @@
             </form>
           {% endif %}
           {% if is_owner_view %}
-            <a class="nav-link" href="/owner">Owner</a>
+            <a class="nav-link" href="/owner">Superadmin</a>
           {% endif %}
           <a class="nav-link" href="/admin">Panel</a>
-          <a class="nav-link" href="/customer">Cliente</a>
-          {% if is_owner_view %}
-            <a class="nav-link" href="/docs">API</a>
-          {% endif %}
           {% if current_user or is_owner_view or is_previewing_business %}
             <a class="nav-link" href="/logout">Salir</a>
           {% endif %}
@@ -46,5 +42,9 @@
       {% block content %}{% endblock %}
     </main>
     <script defer src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script defer src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => window.lucide?.createIcons());
+    </script>
   </body>
 </html>

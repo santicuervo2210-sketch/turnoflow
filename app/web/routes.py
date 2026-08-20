@@ -111,7 +111,7 @@ WEEKDAY_SHORT_LABELS = ("Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom")
 ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "rendimiento"}
 OWNER_MANAGED_SHOP_COOKIE = "turnoflow_owner_shop"
 VISUAL_THEME_OPTIONS = (
-    ("flow", "Flow suave", "Color sutil y moderno"),
+    ("flow", "Clásico TurnoFlow", "Marfil, verde y textura editorial"),
     ("marble", "Marmol claro", "Vetas grises visibles y elegantes"),
     ("wood", "Madera clara", "Listones calidos estilo local"),
     ("brick", "Ladrillo suave", "Textura urbana clara y profesional"),
@@ -304,7 +304,7 @@ def _commercial_status(shop: BarberShop) -> dict[str, object]:
     if remaining.total_seconds() < 0:
         return {"label": "Prueba vencida", "class": "expired", "operational": False, "plan": plan}
     days = max(1, int((remaining.total_seconds() + 86_399) // 86_400))
-    return {"label": f"Prueba: {days} dias", "class": "trial", "operational": True, "plan": plan}
+    return {"label": f"Prueba: {days} días", "class": "trial", "operational": True, "plan": plan}
 
 
 def _dashboard_context(request: Request, session: Session, shop_id: int | None = None, **extra):
@@ -818,7 +818,7 @@ def _bot_quick_actions(
                 }
                 for slot in slots[:8]
             ]
-            actions.append({"label": "Otro dia", "message": "que dias tenes disponibles"})
+            actions.append({"label": "Otro día", "message": "qué días tenés disponibles"})
             actions.append({"label": "Volver", "message": "0"})
             return actions
 
@@ -1033,13 +1033,13 @@ def owner_dashboard(request: Request, session: Session = Depends(get_db)):
         "user_activated": "Acceso reactivado.",
         "user_deleted": "Cuenta de acceso eliminada. Los datos del negocio se conservaron.",
         "user_must_be_inactive": "Primero desactiva la cuenta antes de eliminarla.",
-        "user_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
+        "user_username_in_use": "Ese nombre de usuario ya existe. Elegí otro.",
         "user_access_created": "Acceso creado correctamente. Ya podés entregarle el usuario y la clave al cliente.",
         "user_access_invalid": "No se creó el acceso. Completá el usuario, una clave de al menos 8 caracteres y elegí un negocio.",
         "shop_created": "Negocio creado correctamente.",
         "shop_created_with_user": "Negocio y acceso de cliente creados correctamente.",
-        "shop_phone_in_use": "Ese telefono ya esta asignado a otro negocio.",
-        "shop_username_in_use": "Ese nombre de usuario ya existe. Elegi otro.",
+        "shop_phone_in_use": "Ese teléfono ya está asignado a otro negocio.",
+        "shop_username_in_use": "Ese nombre de usuario ya existe. Elegí otro.",
         "shop_access_invalid": "Para crear el acceso completa usuario y una clave de al menos 8 caracteres.",
         "shop_create_failed": "No se pudo crear el negocio. Revisa los datos e intenta nuevamente.",
         "shop_delete_confirmation_invalid": "No se eliminó el negocio: escribí exactamente el nombre indicado.",
@@ -1458,7 +1458,7 @@ def admin_update_business_hours(
         return _admin_error_response(
             request,
             session,
-            "Selecciona al menos un dia de trabajo valido.",
+            "Seleccioná al menos un día de trabajo válido.",
             selected_module="configuracion",
         )
 
@@ -1599,7 +1599,7 @@ def admin_create_service(
     if not name.strip():
         return _admin_error_response(request, session, "El servicio necesita un nombre.", selected_module="servicios")
     if duration_minutes < 1 or duration_minutes > 480:
-        return _admin_error_response(request, session, "La duracion debe estar entre 1 y 480 minutos.", selected_module="servicios")
+        return _admin_error_response(request, session, "La duración debe estar entre 1 y 480 minutos.", selected_module="servicios")
     if price < 0:
         return _admin_error_response(request, session, "El precio no puede ser negativo.", selected_module="servicios")
 
@@ -1633,7 +1633,7 @@ def admin_edit_service(
     if not name.strip():
         return _admin_error_response(request, session, "El servicio necesita un nombre.", selected_module="servicios")
     if duration_minutes < 1 or duration_minutes > 480:
-        return _admin_error_response(request, session, "La duracion debe estar entre 1 y 480 minutos.", selected_module="servicios")
+        return _admin_error_response(request, session, "La duración debe estar entre 1 y 480 minutos.", selected_module="servicios")
     if price < 0:
         return _admin_error_response(request, session, "El precio no puede ser negativo.", selected_module="servicios")
 
@@ -1689,7 +1689,7 @@ def admin_create_barber(
         return _admin_error_response(
             request,
             session,
-            "Revisa los dias y el horario del profesional.",
+            "Revisá los días y el horario del profesional.",
             selected_module="equipo",
         )
 
@@ -1759,7 +1759,7 @@ def admin_edit_barber(
         return _admin_error_response(
             request,
             session,
-            "Selecciona al menos un dia y revisa el horario del profesional.",
+            "Seleccioná al menos un día y revisá el horario del profesional.",
             selected_module="equipo",
         )
 
@@ -1978,7 +1978,7 @@ def admin_create_working_schedule(
                 request,
                 session,
                 shop_id=_current_shop_id(request, session),
-                error="Selecciona al menos un dia valido y verifica que el inicio sea anterior al fin.",
+                error="Seleccioná al menos un día válido y verificá que el inicio sea anterior al fin.",
                 selected_module="equipo",
             ),
             status_code=HTTPStatus.BAD_REQUEST,
@@ -2071,7 +2071,7 @@ def admin_edit_working_schedule(
         return _admin_error_response(
             request,
             session,
-            "El horario debe tener un dia valido y el inicio debe ser anterior al fin.",
+            "El horario debe tener un día válido y el inicio debe ser anterior al fin.",
             selected_module="configuracion",
         )
 
@@ -2748,7 +2748,7 @@ def bot_simulator_message(
     bot_shop_id = _bot_simulator_shop_id(request, session)
     bot_context = _bot_context_for(session, bot_shop_id, from_phone) if bot_shop_id is not None else None
     if bot_shop_id is None:
-        messages = [("client", message), ("bot", "Crea un negocio activo antes de usar el simulador.")]
+        messages = [("client", message), ("bot", "Creá un negocio activo antes de usar el simulador.")]
     else:
         messages = [
             ("client", message),
