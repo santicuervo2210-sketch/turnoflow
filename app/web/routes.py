@@ -1504,6 +1504,18 @@ def admin_update_business_hours(
     return _redirect_to("/admin?module=configuracion")
 
 
+@router.get("/admin/barber-shops/{barber_shop_id}/branding")
+def admin_business_branding_redirect(
+    request: Request,
+    barber_shop_id: int,
+    session: Session = Depends(get_db),
+) -> RedirectResponse:
+    redirect = _redirect_if_shop_not_allowed(request, session, barber_shop_id)
+    if redirect is not None:
+        return redirect
+    return _redirect_to("/admin?module=configuracion")
+
+
 @router.post("/admin/barber-shops/{barber_shop_id}/branding")
 def admin_update_business_branding(
     request: Request,

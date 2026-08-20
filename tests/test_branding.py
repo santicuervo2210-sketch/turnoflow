@@ -34,6 +34,13 @@ def test_prepare_logo_image_outputs_small_webp() -> None:
 def test_admin_uploads_and_renders_business_logo(client: TestClient) -> None:
     shop_id = client.post("/api/barber-shops", json={"name": "Logo Studio"}).json()["id"]
     client.get(f"/owner/shops/{shop_id}/manage", follow_redirects=False)
+    direct_action_page = client.get(
+        f"/admin/barber-shops/{shop_id}/branding",
+        follow_redirects=False,
+    )
+    assert direct_action_page.status_code == 303
+    assert direct_action_page.headers["location"] == "/admin?module=configuracion"
+
     response = client.post(
         f"/admin/barber-shops/{shop_id}/branding",
         data={"visual_theme": "marble"},
