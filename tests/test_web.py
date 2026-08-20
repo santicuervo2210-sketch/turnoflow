@@ -352,6 +352,8 @@ def test_admin_agenda_registers_cash_and_rendimiento_is_read_only(client: TestCl
 
 
 def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> None:
+    shop_id = client.post("/api/barber-shops", json={"name": "Negocio seleccionado"}).json()["id"]
+    other_shop_id = client.post("/api/barber-shops", json={"name": "Negocio no seleccionado"}).json()["id"]
     monkeypatch.setattr(settings, "auth_enabled", True)
     monkeypatch.setattr(settings, "admin_username", "owner")
     monkeypatch.setattr(settings, "admin_password", "secret")
@@ -377,9 +379,28 @@ def test_admin_auth_can_protect_demo_routes(client: TestClient, monkeypatch) -> 
     )
     assert login_response.status_code == 303
 
+    unscoped_admin_response = client.get("/admin", follow_redirects=False)
+    assert unscoped_admin_response.status_code == 303
+    assert unscoped_admin_response.headers["location"] == "/owner"
+
+    manage_response = client.get(f"/owner/shops/{shop_id}/manage", follow_redirects=False)
+    assert manage_response.status_code == 303
+    assert manage_response.headers["location"] == "/admin"
     admin_response = client.get("/admin")
     assert admin_response.status_code == 200
-    assert "Agenda y caja" in admin_response.text
+    assert "Negocio seleccionado" in admin_response.text
+    assert "Negocio no seleccionado" not in admin_response.text
+
+    csrf_token = _csrf_token_from(client, "/admin")
+    blocked_cross_shop_update = client.post(
+        f"/admin/barber-shops/{other_shop_id}/branding",
+        data={"csrf_token": csrf_token, "visual_theme": "wood"},
+        files={"logo": ("", b"", "application/octet-stream")},
+        follow_redirects=False,
+    )
+    assert blocked_cross_shop_update.status_code == 303
+    other_shop = next(shop for shop in client.get("/api/barber-shops").json() if shop["id"] == other_shop_id)
+    assert other_shop["visual_theme"] == "flow"
 
 
 def test_env_owner_login_does_not_query_users_table(client: TestClient, monkeypatch) -> None:

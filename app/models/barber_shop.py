@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Index, String, Text, text
+from sqlalchemy import CheckConstraint, DateTime, Index, LargeBinary, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -69,6 +69,8 @@ class BarberShop(TimestampMixin, Base):
     )
     logo_url: Mapped[str | None] = mapped_column(Text)
     logo_key: Mapped[str | None] = mapped_column(String(512))
+    logo_data: Mapped[bytes | None] = mapped_column(LargeBinary, deferred=True)
+    logo_content_type: Mapped[str | None] = mapped_column(String(50))
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     suspension_reason: Mapped[str | None] = mapped_column(Text)
     trial_ends_at: Mapped[datetime | None] = mapped_column(

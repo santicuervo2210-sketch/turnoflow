@@ -46,9 +46,6 @@ BUSINESS_TIMEZONE=America/Argentina/Buenos_Aires
 CRON_SECRET=usar-un-tercer-secreto-aleatorio-de-32-caracteres-o-mas
 BOT_CONVERSATION_TTL_DAYS=30
 WEBHOOK_RECEIPT_TTL_DAYS=30
-INSFORGE_BASE_URL=https://TU_APPKEY.us-east.insforge.app
-INSFORGE_API_KEY=usar-la-clave-administrativa-solo-en-el-servidor
-BRANDING_BUCKET=turnoflow-branding
 ```
 
 Notas:
@@ -63,8 +60,7 @@ Notas:
 - `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` deben ser mayores a 0.
 - Usa `DATABASE_POOL_MODE=serverless` en Vercel y `persistent` solo en un servidor o contenedor permanente.
 - `CRON_SECRET` protege `/internal/maintenance`; Vercel lo envia automaticamente al cron diario.
-- `INSFORGE_API_KEY` es exclusiva del servidor y nunca debe aparecer en HTML, JavaScript ni repositorios.
-- `INSFORGE_BASE_URL` y `BRANDING_BUCKET` habilitan la carga persistente de logos. El bucket `turnoflow-branding` debe ser publico para mostrar esos logos en el panel.
+- Los logos se optimizan a WebP y se guardan de forma privada en PostgreSQL. No requieren un bucket publico ni credenciales de InsForge.
 
 ## Comandos de build y arranque
 
@@ -86,7 +82,7 @@ Confirmar revision aplicada:
 python -m alembic current
 ```
 
-La revision esperada para esta version es `20260811_0015`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
+La revision esperada para esta version es `20260819_0016`. En Postgres tambien debe existir el constraint `ex_appointments_no_active_overlap`, creado por la migracion `20260801_0007`.
 
 Crear tu usuario owner inicial:
 
@@ -143,7 +139,7 @@ TurnoFlow quedo conectado a Supabase como PostgreSQL gestionado, sin usar todavi
 - Region: `sa-east-1`.
 - Dashboard: `https://supabase.com/dashboard/project/fyyycgvjqfitvpalwvkn`.
 - Estado verificado por CLI: `ACTIVE_HEALTHY`.
-- Revision Alembic aplicada y verificada: `20260809_0014` despues de ejecutar las migraciones de esta version.
+- Revision Alembic esperada: `20260819_0016` despues de ejecutar las migraciones de esta version.
 
 La variable `DATABASE_URL` local esta en `.env` y apunta a la conexion directa:
 
@@ -191,13 +187,14 @@ Notas:
 - El contexto del bot y el rate limiting se guardan en PostgreSQL, por lo que sobreviven a invocaciones serverless distintas.
 - El proveedor de WhatsApp debe enviar su identificador unico como `message_id`; los reintentos no vuelven a ejecutar la accion.
 - Vercel ejecuta `/internal/maintenance` una vez al dia para eliminar estado temporal vencido.
-- Las migraciones Alembic hasta `20260809_0014` deben estar aplicadas antes de redeployar.
+- Las migraciones Alembic hasta `20260819_0016` deben estar aplicadas antes de redeployar.
 
 ## Pasos en InsForge
 
-Estado actual (11/08/2026): la base de datos de produccion sigue alojada en
-Supabase y Vercel se conecta mediante su pooler PostgreSQL. InsForge se usa para
-el almacenamiento publico de logos. No cambies `DATABASE_URL` a InsForge sin una
+Estado actual (19/08/2026): la base de datos de produccion sigue alojada en
+Supabase y Vercel se conecta mediante su pooler PostgreSQL. Los logos tambien se
+guardan en PostgreSQL desde la revision `20260819_0016`, por lo que InsForge no es
+una dependencia operativa del panel. No cambies `DATABASE_URL` a InsForge sin una
 migracion de datos planificada y verificada.
 
 Estado actual de los proyectos creados desde CLI:
@@ -255,7 +252,7 @@ Antes de usarlo con clientes reales, confirmar desde el dashboard que el plan el
 - [ ] `DATABASE_POOL_MODE=serverless` en Vercel.
 - [ ] `LOGIN_RATE_LIMIT_PER_MINUTE` y `BOT_WEBHOOK_RATE_LIMIT_PER_MINUTE` configurados.
 - [ ] `python -m alembic upgrade head` ejecutado.
-- [ ] `python -m alembic current` muestra `20260809_0014`.
+- [ ] `python -m alembic current` muestra `20260819_0016`.
 - [ ] `python -m app.create_owner` ejecutado.
 - [ ] `python -m app.check_production` devuelve OK.
 - [ ] Datos demo o datos reales iniciales cargados.

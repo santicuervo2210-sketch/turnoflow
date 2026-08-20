@@ -39,39 +39,43 @@ body {
 
 body.tf-theme-marble,
 .tf-theme-preview-marble {
-  background-color: #f3f4f5;
+  background-color: #e9ecef;
   background-image:
-    linear-gradient(118deg, transparent 0 43%, rgba(109, 119, 130, 0.09) 44%, transparent 46%),
-    linear-gradient(24deg, transparent 0 66%, rgba(165, 173, 180, 0.11) 67%, transparent 69%),
-    repeating-linear-gradient(154deg, rgba(255, 255, 255, 0.62) 0 18px, rgba(226, 229, 232, 0.3) 19px 21px, rgba(255, 255, 255, 0.48) 22px 48px);
+    linear-gradient(118deg, transparent 0 41%, rgba(103, 114, 125, 0.2) 42%, rgba(255, 255, 255, 0.72) 43%, transparent 46%),
+    linear-gradient(24deg, transparent 0 64%, rgba(147, 157, 166, 0.18) 65%, rgba(255, 255, 255, 0.62) 67%, transparent 70%),
+    repeating-linear-gradient(154deg, rgba(255, 255, 255, 0.7) 0 24px, rgba(204, 209, 214, 0.34) 25px 27px, rgba(247, 248, 249, 0.6) 28px 58px);
+  background-size: 420px 300px, 510px 340px, auto;
 }
 
 body.tf-theme-wood,
 .tf-theme-preview-wood {
-  background-color: #e8e2da;
+  background-color: #ded0c1;
   background-image:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.36) 0 22px, rgba(122, 106, 92, 0.1) 23px 25px, rgba(255, 255, 255, 0.12) 26px 48px),
-    repeating-linear-gradient(2deg, transparent 0 38px, rgba(104, 89, 76, 0.055) 39px 40px);
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.28) 0 54px, rgba(105, 82, 63, 0.24) 55px 58px, rgba(255, 255, 255, 0.12) 59px 112px),
+    repeating-linear-gradient(2deg, transparent 0 13px, rgba(91, 69, 52, 0.1) 14px 15px, transparent 16px 37px),
+    linear-gradient(90deg, rgba(128, 91, 63, 0.08), rgba(255, 255, 255, 0.22), rgba(128, 91, 63, 0.08));
 }
 
 body.tf-theme-brick,
 .tf-theme-preview-brick {
-  background-color: #e8e9ea;
+  background-color: #d9dcde;
   background-image:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.5) 1px, transparent 1px),
-    linear-gradient(rgba(255, 255, 255, 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, transparent 24px, rgba(125, 132, 139, 0.07) 25px, transparent 26px);
-  background-position: 0 0, 0 0, 0 21px;
-  background-size: 52px 42px, 52px 42px, 52px 42px;
+    linear-gradient(90deg, rgba(255, 255, 255, 0.78) 2px, transparent 2px),
+    linear-gradient(rgba(255, 255, 255, 0.82) 2px, transparent 2px),
+    linear-gradient(90deg, transparent 38px, rgba(255, 255, 255, 0.74) 39px 41px, transparent 42px),
+    linear-gradient(145deg, rgba(122, 127, 132, 0.14), rgba(255, 255, 255, 0.14));
+  background-position: 0 0, 0 0, 0 24px, 0 0;
+  background-size: 80px 48px, 80px 48px, 80px 48px, auto;
 }
 
 body.tf-theme-blush,
 .tf-theme-preview-blush {
-  background-color: #f4e9ec;
+  background-color: #efdee4;
   background-image:
-    linear-gradient(132deg, transparent 0 34%, rgba(209, 164, 178, 0.13) 35%, transparent 38%),
-    linear-gradient(36deg, transparent 0 61%, rgba(193, 175, 181, 0.12) 62%, transparent 65%),
-    repeating-linear-gradient(118deg, rgba(255, 255, 255, 0.34) 0 24px, rgba(244, 226, 232, 0.3) 25px 48px);
+    linear-gradient(132deg, transparent 0 32%, rgba(190, 131, 153, 0.24) 33%, rgba(255, 255, 255, 0.52) 35%, transparent 39%),
+    linear-gradient(36deg, transparent 0 59%, rgba(151, 133, 143, 0.18) 60%, rgba(255, 255, 255, 0.44) 63%, transparent 67%),
+    repeating-linear-gradient(118deg, rgba(255, 255, 255, 0.4) 0 30px, rgba(226, 195, 207, 0.34) 31px 62px);
+  background-size: 430px 320px, 520px 380px, auto;
 }
 
 .tf-theme-preview-flow {

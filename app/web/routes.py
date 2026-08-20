@@ -6,7 +6,7 @@ import hmac
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import and_, case, delete, func, or_, select, true
 from sqlalchemy.exc import IntegrityError
@@ -78,9 +78,7 @@ from app.services.branding import (
     ALLOWED_VISUAL_THEMES,
     MAX_LOGO_UPLOAD_BYTES,
     BrandingError,
-    delete_business_logo,
     prepare_logo_image,
-    upload_business_logo,
 )
 from app.services.supply_sales import create_supply_sale
 from app.services.users import (
@@ -114,10 +112,10 @@ ADMIN_MODULES = {"agenda", "clientes", "servicios", "equipo", "configuracion", "
 OWNER_MANAGED_SHOP_COOKIE = "turnoflow_owner_shop"
 VISUAL_THEME_OPTIONS = (
     ("flow", "Flow suave", "Color sutil y moderno"),
-    ("marble", "Marmol claro", "Vetas grises muy livianas"),
-    ("wood", "Madera clara", "Listones calidos y discretos"),
-    ("brick", "Ladrillo suave", "Textura urbana sin oscurecer"),
-    ("blush", "Rosa mineral", "Marmoleado rosa apagado"),
+    ("marble", "Marmol claro", "Vetas grises visibles y elegantes"),
+    ("wood", "Madera clara", "Listones calidos estilo local"),
+    ("brick", "Ladrillo suave", "Textura urbana clara y profesional"),
+    ("blush", "Rosa mineral", "Marmoleado rosa visible y delicado"),
 )
 
 
@@ -236,7 +234,9 @@ def _redirect_if_not_owner(request: Request, session: Session) -> RedirectRespon
 
 def _shop_allowed(request: Request, session: Session, barber_shop_id: int) -> bool:
     if _is_owner_request(request, session):
-        return True
+        if not settings.auth_enabled:
+            return True
+        return _managed_shop_id(request, session) == barber_shop_id
     return _current_shop_id(request, session) == barber_shop_id
 
 
@@ -1013,6 +1013,8 @@ def logout() -> RedirectResponse:
 @router.get("/admin")
 def admin_dashboard(request: Request, session: Session = Depends(get_db)):
     shop_id = _current_shop_id(request, session)
+    if settings.auth_enabled and shop_id is None:
+        return _redirect_to("/owner" if _is_owner_request(request, session) else "/login")
     return _panel_template_response(
         request,
         "admin/index.html",
@@ -1529,11 +1531,13 @@ def admin_update_business_branding(
         if logo is not None and logo.filename:
             raw_logo = logo.file.read(MAX_LOGO_UPLOAD_BYTES + 1)
             processed_logo = prepare_logo_image(raw_logo)
-            logo_url, logo_key = upload_business_logo(barber_shop_id, processed_logo)
-            shop.logo_url = logo_url
-            shop.logo_key = logo_key
-        elif remove_logo and shop.logo_key:
-            delete_business_logo(shop.logo_key)
+            shop.logo_data = processed_logo
+            shop.logo_content_type = "image/webp"
+            shop.logo_url = f"/admin/barber-shops/{barber_shop_id}/logo"
+            shop.logo_key = None
+        elif remove_logo and (shop.logo_url or shop.logo_data or shop.logo_key):
+            shop.logo_data = None
+            shop.logo_content_type = None
             shop.logo_url = None
             shop.logo_key = None
     except BrandingError as exc:
@@ -1550,6 +1554,22 @@ def admin_update_business_branding(
     shop.visual_theme = visual_theme
     session.commit()
     return _redirect_to("/admin?module=configuracion&notice=branding_saved")
+
+
+@router.get("/admin/barber-shops/{barber_shop_id}/logo")
+def admin_business_logo(
+    request: Request,
+    barber_shop_id: int,
+    session: Session = Depends(get_db),
+) -> Response:
+    shop = session.get(BarberShop, barber_shop_id)
+    if shop is None or not _shop_allowed(request, session, barber_shop_id) or shop.logo_data is None:
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Logo no encontrado.")
+    return Response(
+        content=shop.logo_data,
+        media_type=shop.logo_content_type or "image/webp",
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.post("/admin/services")

@@ -40,6 +40,10 @@ def _ensure_sqlite_demo_columns() -> None:
             statements.append("ALTER TABLE barber_shops ADD COLUMN logo_url TEXT")
         if "logo_key" not in existing_columns:
             statements.append("ALTER TABLE barber_shops ADD COLUMN logo_key VARCHAR(512)")
+        if "logo_data" not in existing_columns:
+            statements.append("ALTER TABLE barber_shops ADD COLUMN logo_data BLOB")
+        if "logo_content_type" not in existing_columns:
+            statements.append("ALTER TABLE barber_shops ADD COLUMN logo_content_type VARCHAR(50)")
 
     if "bot_settings" in table_names:
         existing_columns = {column["name"] for column in inspector.get_columns("bot_settings")}
